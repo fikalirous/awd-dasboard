@@ -62,10 +62,12 @@ If you see a version number, Python is installed correctly.
 
 ## STEP 2 — DOWNLOAD THE DASHBOARD FILES
 
-You need three files:
+You need these files:
 - app.py
 - requirements.txt
 - README.md (this file)
+- .streamlit/config.toml (locks the dashboard to one consistent light colour theme —
+  keep it inside a folder named ".streamlit" next to app.py)
 
 Create a folder on your computer. Name it something like:
   awd-dashboard
@@ -220,13 +222,17 @@ from GitHub to deploy your dashboard.
 
 1. On your repository page, click "Add file"
 2. Click "Upload files"
-3. Drag and drop your three files onto the page:
+3. Drag and drop your files onto the page:
    - app.py
    - requirements.txt
    - README.md
+   - the whole ".streamlit" folder (containing config.toml) — GitHub's upload
+     page accepts dragging a folder directly; if it only accepts single files,
+     create the folder ".streamlit" in the repo first ("Add file" → "Create new
+     file", type ".streamlit/config.toml" as the filename) and paste its contents
 4. Scroll down
 5. Click the green "Commit changes" button
-6. All three files are now on GitHub
+6. All files are now on GitHub
 
 ---
 
@@ -272,43 +278,68 @@ Your client can also click "Refresh Data" in the sidebar to get data immediately
 
 ## DASHBOARD FEATURES
 
+Note on terminology: the Google Sheet stores the field-type column as
+"Experimental" / "Control". Every page in the dashboard displays the
+"Experimental" group as **Treatment** instead — this is just a display label;
+you don't need to change anything in your Google Sheet.
+
+Every metric card, chart heading, and table column has a small "?" help icon —
+hover over it for a plain-English definition of that variable, taken from
+`AWD_Explainer_Document.docx`.
+
 ### Sidebar (left panel)
 - Date range picker — filter to a specific time period
 - Village multi-select — show one or more villages
-- Field type selector — All / Experimental / Control
+- Field type selector — All / Treatment / Control
 - Refresh button — force reload data from Google Sheets
 
 ### Tab 1 — Programme Overview
-- 6 KPI metric cards (farmers, drying events, safe zone %, BGL comparison)
-- Weekly water level trend: Experimental vs Control
-- Phase distribution donut chart
+- KPI metric cards (farmers, drying events, safe zone %, BGL comparison,
+  irrigations Reported vs Calculated)
+- Weekly water level trend: Treatment vs Control
+- Phase distribution donut chart — FL phases grouped together, then RL phases
 - Village comparison bar charts (BGL + drying events)
 - Drying duration by crop growth stage (0-30, 30-60, 60-90, 90+ DAS)
 
-### Tab 2 — Farmer Summary
-- Searchable, sortable table of all farmers with key season metrics
+### Tab 2 — Treatment vs Control (Performance Comparison)
+- Village dropdown to scope the comparison
+- Programme-wide weekly water level trend for all Treatment vs all Control
+  farmers in the selected villages
+- Farmer-level drill-down: pick one Treatment farmer and one Control farmer
+  and overlay their daily water-level trend directly
+- Season metrics shown side by side for the two selected farmers (drying
+  events, irrigations reported/calculated, water added, Gopal depth, etc.)
+- A "Performance Index" radar chart scaling each metric 0–100 so the two
+  farmers can be compared on one chart regardless of units
+
+### Tab 3 — Farmer Summary
+- Searchable, sortable table of all farmers with key season metrics,
+  including both Irrigations Reported and Irrigations Calculated
 - Filter by village and type
-- Top 15 farmers by irrigation events (bar chart)
+- Top 15 farmers by irrigation events — Reported vs Calculated (bar chart)
 - Top 15 farmers by drying events (bar chart)
 - CSV download button
 
-### Tab 3 — Farmer Deep Dive
+### Tab 4 — Farmer Deep Dive
 - Select village → type → individual farmer
-- Season summary metrics pulled from Summary sheet
+- Season summary metrics pulled from Summary sheet, including Irrigations
+  Reported and Irrigations Calculated side by side
 - Full PP reading timeline with:
   - Safe zone green band
-  - Irrigation markers (green triangles ▲)
-  - Phase colour bars below the timeline
+  - Irrigation markers — ▲ reported, ◇ calculated (water level rose >2cm)
+  - Phase colour bars below the timeline (FL group, then RL group)
 - BGL area chart (In ref to surface)
 - Phase distribution donut
-- Raw daily data table (expandable)
+- Raw daily data table (expandable), including the derived
+  "Irrigation Calculated" column
 
-### Tab 4 — Water & Irrigation
+### Tab 5 — Water & Irrigation
 - Programme-level totals: water added, recharged, TNAU baseline, savings %
-- Total water added by village (Experimental vs Control)
+- Total water added by village (Treatment vs Control)
 - Gopal depth distribution histogram
+- Irrigations Reported vs Calculated by village (bar chart)
 
-### Tab 5 — Data Explorer
+### Tab 6 — Data Explorer
 - Full Master Analysis flat table with search and filters
 - Full Summary table with search
 - CSV download for both
