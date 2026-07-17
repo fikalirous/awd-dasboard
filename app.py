@@ -712,7 +712,6 @@ def tab_comparison(master, summary):
         ("Irrigations (Calculated)", "irrigations_b", "{:.0f}"),
         ("Days Below Surface", "days_below", "{:.0f}"),
         ("Total Water Added (m³)", "total_water_m3", "{:.1f}"),
-        ("Avg Gopal Depth (cm)", "avg_gopal_cm", "{:.2f}"),
     ]
     for label, key, fs in metrics:
         cc1, cc2 = st.columns(2)
