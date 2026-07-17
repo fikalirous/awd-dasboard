@@ -156,12 +156,15 @@ S = {
     "total_water_m3"    : "Total Water Added (m3)",
     "total_recharged_mm": "Total Water Recharged (mm)",
     "total_recharged_m3": "Total Water Recharged (m3)",
-    "rl_flood_cm"       : "RL-Flood (cm) Gopal",
-    "rl_inter_cm"       : "RL-Inter (cm) Gopal",
-    "rl_soil_cm"        : "RL-Soil (cm) Gopal",
-    "fl_flood_cm"       : "FL-Flood (cm) Gopal",
-    "fl_inter_cm"       : "FL-Inter (cm) Gopal",
-    "fl_soil_cm"        : "FL-Soil (cm) Gopal",
+    "rl_flood_cm"       : "RL-Flood (cm) ",
+    "rl_inter_cm"       : "RL-Inter (cm) ",
+    "rl_soil_cm"        : "RL-Soil (cm) ",
+    "fl_flood_cm"       : "FL-Flood (cm) ",
+    "fl_inter_cm"       : "FL-Inter (cm) ",
+    "fl_soil_cm"        : "FL-Soil (cm) ",
+    # This column has been removed from the Summary sheet (not renamed).
+    # Every place that reads it already falls back to "—" when it's absent,
+    # so this mapping is kept only so those fallbacks stay well-defined.
     "avg_gopal_cm"      : "Avg Irrig. Depth - Gopal (cm)",
 }
 
