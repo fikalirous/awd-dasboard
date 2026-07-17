@@ -32,7 +32,7 @@ st.set_page_config(
 # ★ STEP 1 — PASTE YOUR GOOGLE SHEETS CSV LINKS HERE ★
 # ═══════════════════════════════════════════════════════════════════
 MASTER_ANALYSIS_URL = (
-    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=301545708&single=true&output=csv"
+    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=124140633&single=true&output=csv"
 )
 
 SUMMARY_URL = (
@@ -408,7 +408,7 @@ def tab_overview(master, summary):
     # Village comparison
     ca, cb = st.columns(2)
     with ca:
-        st.markdown("#### Avg BGL by Village")
+        st.markdown("#### Avg water level to soil surf by Village")
         if not master.empty:
             vb = (master.groupby([M["village"],M["type"]])[M["bgl"]]
                   .mean().reset_index().rename(columns={M["bgl"]:"avg_bgl"}))
