@@ -343,6 +343,27 @@ def metric_card(col, label, value, sub, tip_key, accent):
             st.metric(label, value, sub, help=H(tip_key), delta_color="off")
 
 
+# Safe column access — the Google Sheet can occasionally serve a partial CSV
+# snapshot (e.g. fetched mid-rewrite while the Apps Script rebuilds it), or a
+# column can be renamed upstream. These helpers keep a stale/incomplete fetch
+# from crashing the whole page — missing data shows as "—" instead of an error.
+
+def safe_mean(df, col):
+    return df[col].mean() if (not df.empty and col in df.columns) else None
+
+
+def safe_sum(df, col):
+    return df[col].sum() if (not df.empty and col in df.columns) else None
+
+
+def safe_nunique(df, col):
+    return df[col].nunique() if (not df.empty and col in df.columns) else 0
+
+
+def fmt_or_dash(val, fmt_str="{:.1f}"):
+    return fmt_str.format(val) if val is not None and pd.notna(val) else "—"
+
+
 # ═══════════════════════════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════════════
@@ -453,37 +474,37 @@ def tab_overview(master, summary):
         return
 
     st.markdown("### Key Programme Metrics")
-    n_f  = summary[S["farmer"]].nunique() if not summary.empty else 0
-    n_v  = summary[S["village"]].nunique() if not summary.empty else 0
-    n_de = summary[S["drying_events"]].mean() if not summary.empty else 0
-    treat_bgl = master[master[M["type"]] == "Experimental"][M["bgl"]].mean() \
-                if not master.empty else None
-    ctrl_bgl  = master[master[M["type"]] == "Control"][M["bgl"]].mean() \
-                if not master.empty else None
+    n_f  = safe_nunique(summary, S["farmer"])
+    n_v  = safe_nunique(summary, S["village"])
+    n_de = safe_mean(summary, S["drying_events"])
+    treat_bgl = safe_mean(master[master[M["type"]] == "Experimental"], M["bgl"]) \
+                if not master.empty and M["type"] in master.columns else None
+    ctrl_bgl  = safe_mean(master[master[M["type"]] == "Control"], M["bgl"]) \
+                if not master.empty and M["type"] in master.columns else None
     safe = 0
-    if not master.empty:
+    if not master.empty and M["bgl"] in master.columns:
         s = master[(master[M["bgl"]] >= -5) & (master[M["bgl"]] <= 10)]
         safe = len(s) / len(master) * 100
-    irr_a = summary[S["irrigations_a"]].mean() if not summary.empty else 0
-    irr_b = summary[S["irrigations_b"]].mean() if S["irrigations_b"] in summary.columns and not summary.empty else 0
+    irr_a = safe_mean(summary, S["irrigations_a"])
+    irr_b = safe_mean(summary, S["irrigations_b"])
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     metric_card(c1, "Farmers Enrolled", f"{n_f:,}", f"{n_v} villages", "farmer", C["treatment"])
-    metric_card(c2, "Avg Drying Events", f"{n_de:.1f}", "per farmer", "drying_events", C["accent"])
+    metric_card(c2, "Avg Drying Events", fmt_or_dash(n_de), "per farmer", "drying_events", C["accent"])
     metric_card(c3, "In Safe Zone", f"{safe:.0f}%", "BGL −5 to +10 cm", "safe_zone", C["accent"])
     metric_card(c4, "Treatment Avg BGL",
-                f"{treat_bgl:+.1f} cm" if treat_bgl is not None and pd.notna(treat_bgl) else "—",
+                fmt_or_dash(treat_bgl, "{:+.1f} cm"),
                 "in ref to surface", "bgl", C["treatment"])
     metric_card(c5, "Control Avg BGL",
-                f"{ctrl_bgl:+.1f} cm" if ctrl_bgl is not None and pd.notna(ctrl_bgl) else "—",
+                fmt_or_dash(ctrl_bgl, "{:+.1f} cm"),
                 "in ref to surface", "bgl", C["control"])
     with c6:
         with st.container(border=True):
             st.markdown(
                 f"<div style='height:4px;background:{C['accent']};border-radius:3px;"
                 f"margin:-1rem -1rem 0.6rem -1rem;'></div>", unsafe_allow_html=True)
-            st.metric("Avg Irrigations (Reported)", f"{irr_a:.1f}",
-                       f"{irr_b:.1f} calculated" if irr_b else None,
+            st.metric("Avg Irrigations (Reported)", fmt_or_dash(irr_a),
+                       f"{irr_b:.1f} calculated" if irr_b is not None and pd.notna(irr_b) else None,
                        delta_color="off",
                        help=H("irrigations_a") + " " + H("irrigations_b"))
 
@@ -991,17 +1012,17 @@ def tab_water(master, summary):
     st.markdown("### Water & Irrigation Analysis")
 
     if not summary.empty:
-        tw   = summary[S["total_water_m3"]].sum()
-        tr   = summary[S["total_recharged_m3"]].sum()
-        tl   = summary[S["land_area"]].sum()
-        tnau = 1.1 * 4046.8 * tl
-        sav  = (tnau - tw) / tnau * 100 if tnau > 0 else 0
+        tw   = safe_sum(summary, S["total_water_m3"])
+        tr   = safe_sum(summary, S["total_recharged_m3"])
+        tl   = safe_sum(summary, S["land_area"])
+        tnau = 1.1 * 4046.8 * tl if tl is not None else None
+        sav  = (tnau - tw) / tnau * 100 if tnau and tw is not None and tnau > 0 else None
 
         c1, c2, c3, c4 = st.columns(4)
-        metric_card(c1, "Total Water Added", f"{tw:,.0f}", "m³", "total_water_m3", C["treatment"])
-        metric_card(c2, "Total Recharged", f"{tr:,.0f}", "m³", "total_recharged_m3", C["accent"])
-        metric_card(c3, "TNAU Baseline", f"{tnau:,.0f}", "m³", "tnau_baseline", C["control"])
-        metric_card(c4, "Est. Savings", f"{sav:.1f}%", "vs TNAU", "savings_pct", C["accent"])
+        metric_card(c1, "Total Water Added", fmt_or_dash(tw, "{:,.0f}"), "m³", "total_water_m3", C["treatment"])
+        metric_card(c2, "Total Recharged", fmt_or_dash(tr, "{:,.0f}"), "m³", "total_recharged_m3", C["accent"])
+        metric_card(c3, "TNAU Baseline", fmt_or_dash(tnau, "{:,.0f}"), "m³", "tnau_baseline", C["control"])
+        metric_card(c4, "Est. Savings", fmt_or_dash(sav, "{:.1f}%"), "vs TNAU", "savings_pct", C["accent"])
         st.markdown("<br>", unsafe_allow_html=True)
         st.divider()
 
