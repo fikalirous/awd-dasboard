@@ -506,8 +506,8 @@ def tab_overview(master, summary):
             st.markdown(
                 f"<div style='height:4px;background:{C['accent']};border-radius:3px;"
                 f"margin:-1rem -1rem 0.6rem -1rem;'></div>", unsafe_allow_html=True)
-            st.metric("Avg Irrigations (Reported)", fmt_or_dash(irr_a),
-                       f"{irr_b:.1f} calculated" if irr_b is not None and pd.notna(irr_b) else None,
+            st.metric("Avg Irrigations (Calculated)", fmt_or_dash(irr_b),
+                       f"{irr_a:.1f} reported" if irr_a is not None and pd.notna(irr_a) else None,
                        delta_color="off",
                        help=H("irrigations_a") + " " + H("irrigations_b"))
 
