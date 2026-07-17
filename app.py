@@ -561,7 +561,7 @@ def tab_overview(master, summary):
 
     ca, cb = st.columns(2)
     with ca:
-        st.markdown("#### Avg BGL by Village")
+        st.markdown("#### Water relative to Soil Surface by Village", help=H("bgl"))
         if not master.empty:
             mm = master.copy()
             mm["Group"] = to_group(mm[M["type"]])
