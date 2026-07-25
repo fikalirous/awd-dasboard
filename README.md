@@ -68,11 +68,15 @@ You need these files:
 - README.md (this file)
 - .streamlit/config.toml (locks the dashboard to one consistent light colour theme —
   keep it inside a folder named ".streamlit" next to app.py)
+- geo/farmer_points.geojson, geo/gp_boundary.geojson, geo/command_area.geojson
+  (map data for the Programme Overview map — keep them inside a folder named
+  "geo" next to app.py)
 
 Create a folder on your computer. Name it something like:
   awd-dashboard
 
-Put all three files inside that folder.
+Put all the files inside that folder, keeping the ".streamlit" and "geo"
+subfolders intact.
 
 ---
 
@@ -230,6 +234,7 @@ from GitHub to deploy your dashboard.
      page accepts dragging a folder directly; if it only accepts single files,
      create the folder ".streamlit" in the repo first ("Add file" → "Create new
      file", type ".streamlit/config.toml" as the filename) and paste its contents
+   - the whole "geo" folder (containing the three .geojson files), the same way
 4. Scroll down
 5. Click the green "Commit changes" button
 6. All files are now on GitHub
@@ -278,10 +283,10 @@ Your client can also click "Refresh Data" in the sidebar to get data immediately
 
 ## DASHBOARD FEATURES
 
-Note on terminology: the Google Sheet stores the field-type column as
-"Experimental" / "Control". Every page in the dashboard displays the
-"Experimental" group as **Treatment** instead — this is just a display label;
-you don't need to change anything in your Google Sheet.
+Note on terminology: older Apps Script versions stored the field-type column
+as "Experimental" / "Control"; v9+ stores "Treatment" / "Control" directly.
+Either way, the dashboard displays that group as **Treatment** — this is
+just a display label; you don't need to change anything in your Google Sheet.
 
 Every metric card, chart heading, and table column has a small "?" help icon —
 hover over it for a plain-English definition of that variable, taken from
@@ -294,12 +299,20 @@ hover over it for a plain-English definition of that variable, taken from
 - Refresh button — force reload data from Google Sheets
 
 ### Tab 1 — Programme Overview
-- KPI metric cards (farmers, drying events, safe zone %, BGL comparison,
-  irrigations Reported vs Calculated)
-- Weekly water level trend: Treatment vs Control
+- Interactive map: every currently filtered farmer pinned by GPS location
+  (blue = Treatment, orange = Control), with Gram Panchayat boundary and
+  command-area layers you can toggle on/off
+- KPI metric cards (farmers, avg drying events — **Treatment farmers only**,
+  safe zone %, BGL comparison, irrigations Reported vs Calculated)
+- Water level on field vs. Days After Sowing: Treatment vs Control, aligned
+  by crop age rather than calendar date so farmers with different sowing
+  dates compare on the same growth-stage axis
 - Phase distribution donut chart — FL phases grouped together, then RL phases
 - Village comparison bar charts (BGL + drying events)
 - Drying duration by crop growth stage (0-30, 30-60, 60-90, 90+ DAS)
+
+The map needs a `geo/` folder (farmer_points.geojson, gp_boundary.geojson,
+command_area.geojson) next to `app.py` — see Step 2 below.
 
 ### Tab 2 — Treatment vs Control (Performance Comparison)
 - Village dropdown to scope the comparison
@@ -316,8 +329,8 @@ hover over it for a plain-English definition of that variable, taken from
 - Searchable, sortable table of all farmers with key season metrics,
   including both Irrigations Reported and Irrigations Calculated
 - Filter by village and type
-- Top 15 farmers by irrigation events — Reported vs Calculated (bar chart)
-- Top 15 farmers by drying events (bar chart)
+- Top 15 farmers by irrigation depth, in mm (bar chart)
+- Bottom 15 farmers by irrigation depth, in mm (bar chart)
 - CSV download button
 
 ### Tab 4 — Farmer Deep Dive
@@ -372,6 +385,8 @@ hover over it for a plain-English definition of that variable, taken from
 
 ## COLUMN NAMES THIS DASHBOARD EXPECTS
 
+These match Apps Script v9. Both Irrigation columns are written as YES/NO text.
+
 ### Master Analysis (21 columns)
 A: Farmer Name
 B: Village (Gram Panchayat)
@@ -381,7 +396,7 @@ E: Land Area (acres)
 F: Date of Sowing
 G: CRP Incharge
 H: Date
-I: Days Since Sowing
+I: Monitoring Day
 J: PP Reading (cm)
 K: Duplicate? (count)
 L: Zero Replaced?
@@ -389,20 +404,25 @@ M: In ref to surface
 N: FL / RL
 O: Phase
 P: Change in WL (cm)
-Q: Irrigated Water (cm)
-R: Irrigated Water (m3)
-S: Irrig. Depth Gopal (cm)
-T: Irrigation Reported
+Q: Event
+R: Irrig. Depth (cm)
+S: Irrigation Reported (YES/NO)
+T: Irrigation Calculated (YES/NO)
 U: Days Monitored
 
-### Summary (key columns used)
+The dashboard computes its own "Days After Sowing" (Date − Date of Sowing)
+for the Days-After-Sowing trend chart — it doesn't rely on column I, which
+is just a sequential reading count, not a calendar-based day count.
+
+### Summary (key columns used, of 49 total)
 Farmer Name, Village (Gram Panchayat), Type, Land Area (acres),
-Days Monitored, No. of Drying Events, Days Water Above Surface,
-Days Water Below Surface, Dry Days (>=25cm),
+GP Coordinates (Lat, Long), Days Monitored, No. of Drying Events,
+Days Water Above Surface, Days Water Below Surface, Dry Days (>=25cm),
 No. Irrigations (a) Reported, No. Irrigations (b) Calculated,
-Total Water Added (mm), Total Water Added (m3),
-Total Water Recharged (m3), Avg Irrig. Depth - Gopal (cm),
-Avg Drying Days Phase 1-4, RL/FL phase Gopal columns
+Total Irrigated Water Depth (mm), Total Irrigated Water Depth (m3),
+Total Water Recharged (m3), Avg Drying Days Phase 1-4,
+RL-Flood/Inter/Soil (mm), FL-Flood/Inter/Soil (mm),
+Actual Water Savings (%), Actual Water Savings (mm), Actual Vol. Water Saving (m3)
 
 ---
 

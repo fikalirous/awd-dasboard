@@ -1,16 +1,21 @@
 """
-AWD FARMER PROGRESS DASHBOARD — v3
-Reads from two Google Sheets:
-  1. Master Analysis  — daily readings, one row per farmer per date
-  2. Summary          — season totals, one row per farmer
+AWD FARMER PROGRESS DASHBOARD — v4
+Reads from two Google Sheets (Apps Script v9 schema):
+  1. Master Analysis  — daily readings, one row per farmer per date (21 cols)
+  2. Summary          — season totals, one row per farmer (49 cols)
 
 To connect your sheets: find the two lines marked with ← PASTE YOUR URL HERE
 and replace with your published CSV links.
 
-Field-type terminology: the source data (and Google Sheet) uses "Experimental"
-for AWD-protocol farmers. Every page in this dashboard displays that group as
-"Treatment" instead — see relabel_type() / to_group() below. Filtering logic
-still matches on the raw "Experimental" value since that's what's in the data.
+The Programme Overview map needs the geo/ folder (farmer_points.geojson,
+gp_boundary.geojson, command_area.geojson) to sit next to this file —
+converted once from the shapefiles in "map generation/" via geopandas.
+
+Field-type terminology: older Apps Script versions wrote "Experimental" for
+AWD-protocol farmers; v9+ writes "Treatment" directly. Every page in this
+dashboard displays that group as "Treatment" and every filter/comparison goes
+through relabel_type() / to_group() below, so both raw spellings are accepted
+without code changes if the sheet's wording changes again.
 """
 
 import streamlit as st
@@ -20,8 +25,14 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import numpy as np
 import requests
+import json
+from pathlib import Path
 from io import StringIO
 from datetime import datetime
+import folium
+from streamlit_folium import st_folium
+
+GEO_DIR = Path(__file__).parent / "geo"
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE CONFIGURATION — must be the very first Streamlit command
@@ -37,7 +48,7 @@ st.set_page_config(
 # ★ STEP 1 — PASTE YOUR GOOGLE SHEETS CSV LINKS HERE ★
 # ═══════════════════════════════════════════════════════════════════
 MASTER_ANALYSIS_URL = (
-    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=124140633&single=true&output=csv"
+    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=1129685650&single=true&output=csv"
 )
 
 SUMMARY_URL = (
@@ -72,13 +83,16 @@ C = {
 # FL terms always grouped before RL terms in every chart that shows phases
 PHASE_ORDER = ["FL-Flood", "FL-Inter", "FL-Soil", "RL-Flood", "RL-Inter", "RL-Soil", "No change"]
 
-# Display-label mapping — "Experimental" (source data) shows as "Treatment" everywhere
+# Display-label mapping — normalises both old ("Experimental") and current
+# ("Treatment") raw spellings to one display label. Any filter/comparison
+# against Type should go through relabel_type()/to_group(), never a hardcoded
+# literal, so it keeps working if the sheet's wording changes again.
 LABEL = {"Experimental": "Treatment"}
 GROUP_COLOR = {"Treatment": C["treatment"], "Control": C["control"]}
 
 
 def relabel_type(val):
-    """Map a raw Type value to its display label (Experimental -> Treatment)."""
+    """Map a raw Type value to its display label (Experimental/Treatment -> Treatment)."""
     return LABEL.get(val, val)
 
 
@@ -87,39 +101,39 @@ def to_group(series):
     return series.map(relabel_type)
 
 
+# Derived columns — not in the source sheet, calculated on load.
+DAS_COL = "Days After Sowing (derived)"  # Date − Date of Sowing, computed ourselves
+
 # ═══════════════════════════════════════════════════════════════════
-# COLUMN NAMES — Master Analysis (21 columns)
+# COLUMN NAMES — Master Analysis (21 columns) — Apps Script v9
 # ═══════════════════════════════════════════════════════════════════
 M = {
-    "farmer"      : "Farmer Name",
-    "village"     : "Village (Gram Panchayat)",
-    "type"        : "Type",
-    "method"      : "Method of Cultivation",
-    "land_area"   : "Land Area (acres)",
-    "sowing_date" : "Date of Sowing",
-    "crp"         : "CRP Incharge",
-    "date"        : "Date",
-    "das"         : "Days Since Sowing",
-    "pp_reading"  : "PP Reading (cm)",
-    "duplicate"   : "Duplicate? (count)",
-    "zero_repl"   : "Zero Replaced?",
-    "bgl"         : "In ref to surface",
-    "fl_rl"       : "FL / RL",
-    "phase"       : "Phase",
-    "change_wl"   : "Change in WL (cm)",
-    "irrig_cm"    : "Irrigated Water (cm)",
-    "irrig_m3"    : "Irrigated Water (m3)",
-    "gopal_cm"    : "Irrig. Depth Gopal (cm)",
-    "irrigated"   : "Irrigation Reported",
-    "days_mon"    : "Days Monitored",
+    "farmer"         : "Farmer Name",
+    "village"        : "Village (Gram Panchayat)",
+    "type"           : "Type",
+    "method"         : "Method of Cultivation",
+    "land_area"      : "Land Area (acres)",
+    "sowing_date"    : "Date of Sowing",
+    "crp"            : "CRP Incharge",
+    "date"           : "Date",
+    "monitoring_day" : "Monitoring Day",
+    "das"            : DAS_COL,
+    "pp_reading"     : "PP Reading (cm)",
+    "duplicate"      : "Duplicate? (count)",
+    "zero_repl"      : "Zero Replaced?",
+    "bgl"            : "In ref to surface",
+    "fl_rl"          : "FL / RL",
+    "phase"          : "Phase",
+    "change_wl"      : "Change in WL (cm)",
+    "event"          : "Event",
+    "gopal_cm"       : "Irrig. Depth (cm)",
+    "irrigated"      : "Irrigation Reported",
+    "irrig_calc"     : "Irrigation Calculated",
+    "days_mon"       : "Days Monitored",
 }
 
-# Derived column — not in the source sheet, calculated on load.
-# Matches the Apps Script definition: BGL rose >2cm vs the previous day.
-IRRIG_CALC_COL = "Irrigation Calculated (derived)"
-
 # ═══════════════════════════════════════════════════════════════════
-# COLUMN NAMES — Summary (45 columns)
+# COLUMN NAMES — Summary (49 columns) — Apps Script v9
 # ═══════════════════════════════════════════════════════════════════
 S = {
     "serial"            : "#",
@@ -128,9 +142,11 @@ S = {
     "type"              : "Type",
     "method"            : "Method of Cultivation",
     "land_area"         : "Land Area (acres)",
+    "gps"               : "GP Coordinates (Lat, Long)",
     "sowing_date"       : "Date of Sowing",
-    "cm_start"          : "Date of CM Start",
-    "cm_end"            : "Date of CM End",
+    "cm_start"          : "Start Date of Continuous Monitoring",
+    "cm_end"            : "End Date of Continuous Monitoring",
+    "harvest_date"      : "Date of Harvest",
     "days_monitored"    : "Days Monitored",
     "duplicate_days"    : "Duplicate Days",
     "missing_days"      : "Missing Days",
@@ -139,12 +155,14 @@ S = {
     "days_below"        : "Days Water Below Surface",
     "dry_days"          : "Dry Days (>=25cm)",
     "drying_events"     : "No. of Drying Events",
-    "avg_between_dry"   : "Avg Days Between Dry Periods",
+    "avg_between_dry"   : "Avg Wet Days Between Dry Cycles",
     "min_between_dry"   : "Min Days Between Dry Periods",
     "max_between_dry"   : "Max Days Between Dry Periods",
     "irrigations_a"     : "No. Irrigations (a) Reported",
     "irrigations_b"     : "No. Irrigations (b) Calculated",
     "avg_between_wet"   : "Avg Days Between Wet Events",
+    "min_between_wet"   : "Min Days Between Wet Events",
+    "max_between_wet"   : "Max Days Between Wet Events",
     "avg_drying_overall": "Avg Drying Days (Overall)",
     "avg_drying_p1"     : "Avg Drying Days Phase 1 (0-30)",
     "avg_drying_p2"     : "Avg Drying Days Phase 2 (30-60)",
@@ -152,19 +170,23 @@ S = {
     "avg_drying_p4"     : "Avg Drying Days Phase 4 (90+)",
     "max_wl_events"     : "Max WL Events (>10cm above)",
     "min_wl_events"     : "Min WL Events (>10cm below)",
-    "total_water_mm"    : "Total Water Added (mm)",
-    "total_water_m3"    : "Total Water Added (m3)",
+    "total_water_mm"    : "Total Irrigated Water Depth (mm)",
+    "total_water_m3"    : "Total Irrigated Water Depth (m3)",
     "total_recharged_mm": "Total Water Recharged (mm)",
     "total_recharged_m3": "Total Water Recharged (m3)",
-    "rl_flood_cm"       : "RL-Flood (cm) ",
-    "rl_inter_cm"       : "RL-Inter (cm) ",
-    "rl_soil_cm"        : "RL-Soil (cm) ",
-    "fl_flood_cm"       : "FL-Flood (cm) ",
-    "fl_inter_cm"       : "FL-Inter (cm) ",
-    "fl_soil_cm"        : "FL-Soil (cm) ",
-    # This column has been removed from the Summary sheet (not renamed).
-    # Every place that reads it already falls back to "—" when it's absent,
-    # so this mapping is kept only so those fallbacks stay well-defined.
+    "rl_flood_mm"       : "RL-Flood (mm)",
+    "rl_inter_mm"       : "RL-Inter (mm)",
+    "rl_soil_mm"        : "RL-Soil (mm)",
+    "fl_flood_mm"       : "FL-Flood (mm)",
+    "fl_inter_mm"       : "FL-Inter (mm)",
+    "fl_soil_mm"        : "FL-Soil (mm)",
+    "max_dry_duration"  : "Max Dry Period Duration (days)",
+    "savings_pct"       : "Actual Water Savings (%)",
+    "savings_mm"        : "Actual Water Savings (mm)",
+    "savings_m3"        : "Actual Vol. Water Saving (m3)",
+    # This column was removed outright in the v9 rewrite (not renamed) —
+    # every place that reads it already falls back to "—" when absent, so
+    # this mapping is kept only so those fallbacks stay well-defined.
     "avg_gopal_cm"      : "Avg Irrig. Depth - Gopal (cm)",
 }
 
@@ -183,9 +205,12 @@ TIPS = {
     "crp"         : "The field officer (Community Resource Person) responsible for this farmer.",
     "cm_start"    : "Date of the first valid Pani pipe reading recorded for this farmer.",
     "cm_end"      : "Date of the most recent reading recorded for this farmer.",
+    "harvest_date": "The date the crop was harvested, once recorded.",
+    "gps"         : "The farmer's field location as \"Latitude, Longitude\" — used to place the pin on the map.",
     # Daily readings
     "date"        : "The calendar date of this water-level reading.",
-    "das"         : "Days Since Sowing — how many days have passed since the crop was sown.",
+    "das"         : "Days After Sowing — how many days have passed since the crop was sown (Date − Date of Sowing).",
+    "monitoring_day": "The sequence number of this reading for the farmer (1st reading, 2nd reading, …). Not the same as Days After Sowing — this just counts monitored days in order, regardless of any gaps.",
     "pp_reading"  : "Pani Pipe reading in centimetres — the distance from the top of the pipe down to the water surface inside it. Lower = more flooded, higher = drier. Formula: BGL = 15 − PP Reading.",
     "duplicate"   : "Flags dates where more than one raw reading was submitted for this farmer and the readings were averaged together.",
     "zero_repl"   : "Flags a reading of 0 (physically impossible) that was automatically replaced with the previous day's value.",
@@ -193,11 +218,10 @@ TIPS = {
     "fl_rl"       : "Falling Limb (FL) = field is drying (today's level lower than yesterday's). Rising Limb (RL) = field is being re-wetted. NC = no change.",
     "phase"       : "One of six AWD cycle phases — FL-Flood, FL-Inter, FL-Soil (drying), then RL-Soil, RL-Inter, RL-Flood (re-wetting) — showing exactly where the field sits in the wet/dry cycle.",
     "change_wl"   : "Day-on-day change in water level, in cm. Positive = rising, negative = falling.",
-    "irrig_cm"    : "Depth of water added on Rising Limb (re-wetting) days, in centimetres.",
-    "irrig_m3"    : "Volume of water added, in cubic metres — irrigation depth scaled by the field's land area.",
-    "gopal_cm"    : "Advisor Gopal's normalised irrigation depth (cm), adjusted for soil porosity (7%) so it's directly comparable across farmers regardless of field size.",
+    "event"       : "Simple wet/dry label for the day — wet when BGL ≥ 0 (water at or above the surface), dry when BGL < 0.",
+    "gopal_cm"    : "Advisor Gopal's normalised irrigation depth (cm) for this day, adjusted for soil porosity (7%) so it's directly comparable across farmers regardless of field size.",
     "irrigated"   : "Whether the enumerator recorded that the field was irrigated on this date — a ground-truth field observation (\"Irrigations Reported\").",
-    "irrig_calc"  : "A day is counted as an irrigation here if the water level rose by more than 2 cm compared to the previous day — calculated purely from the readings, independent of what the enumerator reported. Comparing this to \"Reported\" flags possible data-entry gaps.",
+    "irrig_calc"  : "A day is counted as an irrigation here if the water level rose by more than 2cm compared to the previous day (or, on a farmer's very first monitored day, if the level was already above 1cm) — worked out purely from the readings, independent of what the enumerator reported. Comparing this to \"Reported\" flags possible data-entry gaps.",
     "days_mon"    : "Total number of days with a valid reading for this farmer.",
     # Monitoring quality
     "days_monitored" : "Count of unique dates with a valid Pani pipe reading, after removing duplicate same-day entries.",
@@ -217,6 +241,8 @@ TIPS = {
     "irrigations_a" : "Number of days the enumerator marked the field as irrigated in the field app — the ground-truth count (\"Reported\").",
     "irrigations_b" : "Number of days the water level rose by more than 2cm from the previous day, worked out purely from the readings (\"Calculated\"). Large gaps between Reported and Calculated flag data-quality issues worth checking.",
     "avg_between_wet": "Average number of days between consecutive irrigation (re-flooding) events. Longer gaps generally mean better AWD practice.",
+    "min_between_wet": "Shortest gap between any two consecutive irrigation (re-flooding) events.",
+    "max_between_wet": "Longest gap between any two consecutive irrigation (re-flooding) events (excludes the final, possibly-ongoing gap).",
     # Drying duration by stage
     "avg_drying_overall": "Average duration, in days, of all drying events across the full season.",
     "avg_drying_p1" : "Average drying-event duration during 0–30 Days After Sowing — early vegetative stage, roots shallow, demand low.",
@@ -226,22 +252,25 @@ TIPS = {
     # Extremes
     "max_wl_events" : "Count of days the water level was more than 10cm above the soil surface — flags over-flooding / excess water input.",
     "min_wl_events" : "Count of days the water level was more than 10cm below the soil surface — flags deep drying / potential crop stress.",
+    "max_dry_duration" : "The longest single drying event this season, in days.",
     # Water volumes
     "total_water_mm"     : "Total irrigation water added across the season, in millimetres depth, using Gopal's normalised formula.",
     "total_water_m3"     : "Total irrigation water added across the season, in cubic metres — depth scaled by the field's land area.",
     "total_recharged_mm" : "Total water drained from the field across the season (Falling Limb / drying events), in millimetres depth.",
     "total_recharged_m3" : "Total water drained from the field across the season, in cubic metres.",
-    "avg_gopal_cm"       : "Average of all per-irrigation-event Gopal depth values (cm) across the season — a field-size-independent metric, so it's fair to compare across farmers.",
-    "rl_flood_cm" : "Total Gopal depth (cm) accumulated on RL-Flood days this season — full depth counted, both above ground.",
-    "rl_inter_cm" : "Total Gopal depth (cm) accumulated on RL-Inter days this season — split formula as water crosses the surface upward.",
-    "rl_soil_cm"  : "Total Gopal depth (cm) accumulated on RL-Soil days this season — porosity-adjusted, both below ground.",
-    "fl_flood_cm" : "Total Gopal depth (cm) drained on FL-Flood days this season (negative — water lost, both above ground).",
-    "fl_inter_cm" : "Total Gopal depth (cm) drained on FL-Inter days this season (negative — split formula, crossing surface downward).",
-    "fl_soil_cm"  : "Total Gopal depth (cm) drained on FL-Soil days this season (negative — porosity-adjusted, both below ground).",
+    "avg_gopal_cm"       : "Average of all per-irrigation-event Gopal depth values (cm) across the season — a field-size-independent metric, so it's fair to compare across farmers. (Removed from the current sheet — shown as \"—\" where it can't be found.)",
+    "rl_flood_mm" : "Total irrigation depth (mm) accumulated on RL-Flood days this season — full depth counted, both above ground.",
+    "rl_inter_mm" : "Total irrigation depth (mm) accumulated on RL-Inter days this season — split formula as water crosses the surface upward.",
+    "rl_soil_mm"  : "Total irrigation depth (mm) accumulated on RL-Soil days this season — porosity-adjusted, both below ground.",
+    "fl_flood_mm" : "Total depth (mm) drained on FL-Flood days this season (negative — water lost, both above ground).",
+    "fl_inter_mm" : "Total depth (mm) drained on FL-Inter days this season (negative — split formula, crossing surface downward).",
+    "fl_soil_mm"  : "Total depth (mm) drained on FL-Soil days this season (negative — porosity-adjusted, both below ground).",
     # App-level concepts
     "safe_zone"      : "The −5 to +10 cm BGL band shaded green on these charts — a water level considered a good balance between the drying benefits of AWD and the risk of crop stress.",
     "tnau_baseline"  : "The Tamil Nadu Agricultural University conventional irrigation benchmark: 1.1 metres of water depth per acre per season (≈4,451.5 m³/acre). Used as the reference point for calculating water savings.",
-    "savings_pct"    : "(TNAU Baseline − Actual Water Added) ÷ TNAU Baseline × 100 — the percentage of the conventional water benchmark this programme is saving.",
+    "savings_pct"    : "How much less water was used than the 1,100mm conventional-flooding benchmark, as a percentage. (Baseline − Actual Water Added) ÷ Baseline × 100.",
+    "savings_mm"     : "How much less water was used than the 1,100mm conventional-flooding benchmark, in millimetres depth.",
+    "savings_m3"     : "How much less water was used than the conventional-flooding benchmark, in cubic metres — scaled by the field's land area.",
     "village_filter" : "Restrict every chart and table on this page to farmers in the selected village(s) (Gram Panchayats).",
     "type_filter"    : "Show All farmers, only Treatment (AWD protocol) farmers, or only Control (conventional flooding) farmers.",
     "date_filter"    : "Restrict every chart and table to readings within this date range.",
@@ -268,21 +297,23 @@ def load_master(url):
         for col in [M["date"], M["sowing_date"]]:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], dayfirst=True, errors="coerce")
-        num_cols = [M["land_area"], M["das"], M["pp_reading"], M["bgl"],
-                    M["change_wl"], M["irrig_cm"], M["irrig_m3"],
-                    M["gopal_cm"], M["days_mon"]]
+        num_cols = [M["land_area"], M["monitoring_day"], M["pp_reading"], M["bgl"],
+                    M["change_wl"], M["gopal_cm"], M["days_mon"]]
         for col in num_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
-        if M["irrigated"] in df.columns:
-            df[M["irrigated"]] = df[M["irrigated"]].astype(str).str.upper() == "TRUE"
-        for col in [M["farmer"], M["village"], M["type"], M["phase"], M["fl_rl"]]:
+        # Irrigation Reported / Calculated are written as YES/NO strings (v9)
+        for col in [M["irrigated"], M["irrig_calc"]]:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.strip().str.upper() == "YES"
+        for col in [M["farmer"], M["village"], M["type"], M["phase"], M["fl_rl"], M["event"]]:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
         df = df.sort_values([M["farmer"], M["date"]]).reset_index(drop=True)
-        # Derived: calculated irrigation — BGL rose >2cm vs the previous day for that farmer
-        if M["bgl"] in df.columns and M["farmer"] in df.columns:
-            df[IRRIG_CALC_COL] = df.groupby(M["farmer"])[M["bgl"]].diff() > 2
+        # Derived: real Days After Sowing (the sheet's own "Monitoring Day" column
+        # is just a sequential reading count, not this) — used for the DAS-aligned trend.
+        if M["date"] in df.columns and M["sowing_date"] in df.columns:
+            df[DAS_COL] = (df[M["date"]] - df[M["sowing_date"]]).dt.days
         return df
     except Exception as e:
         st.error(f"Error loading Master Analysis: {e}")
@@ -297,22 +328,116 @@ def load_summary(url):
         r = requests.get(url, timeout=20)
         r.raise_for_status()
         df = pd.read_csv(StringIO(r.text))
-        for col in [S["sowing_date"], S["cm_start"], S["cm_end"]]:
+        for col in [S["sowing_date"], S["cm_start"], S["cm_end"], S["harvest_date"]]:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], dayfirst=True, errors="coerce")
         num_s = [v for k, v in S.items()
-                 if k not in ["serial","farmer","village","type","method",
-                              "sowing_date","cm_start","cm_end"]]
+                 if k not in ["serial", "farmer", "village", "type", "method",
+                              "sowing_date", "cm_start", "cm_end", "harvest_date", "gps"]]
         for col in num_s:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
-        for col in [S["farmer"], S["village"], S["type"]]:
+        for col in [S["farmer"], S["village"], S["type"], S["gps"]]:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
         return df
     except Exception as e:
         st.error(f"Error loading Summary: {e}")
         return pd.DataFrame()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# MAP — village boundaries + farmer locations (from bundled GeoJSON)
+# ═══════════════════════════════════════════════════════════════════
+
+@st.cache_data
+def load_geojson(filename):
+    path = GEO_DIR / filename
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def render_farmer_map(summary):
+    """Boundary + pin-point map for every currently-filtered farmer, coloured by Type."""
+    pts_geo = load_geojson("farmer_points.geojson")
+    gp_geo = load_geojson("gp_boundary.geojson")
+    cmd_geo = load_geojson("command_area.geojson")
+
+    if pts_geo is None:
+        st.info("Map data not found — expected a `geo/farmer_points.geojson` file next to app.py.")
+        return
+
+    # Farmer -> season info, from the currently filtered Summary (respects sidebar filters)
+    info_by_farmer = {}
+    if not summary.empty:
+        for _, row in summary.iterrows():
+            name = str(row.get(S["farmer"], "")).strip().lower()
+            if not name or name == "nan":
+                continue
+            info_by_farmer[name] = {
+                "type": relabel_type(row.get(S["type"])),
+                "village": row.get(S["village"], ""),
+                "land_area": row.get(S["land_area"]),
+            }
+
+    plotted = []
+    for feat in pts_geo["features"]:
+        name = str(feat["properties"].get("farmer", "")).strip()
+        info = info_by_farmer.get(name.lower())
+        if info is None:
+            continue
+        lon, lat = feat["geometry"]["coordinates"]
+        plotted.append((name, lat, lon, info))
+
+    if not plotted:
+        st.info("None of the currently filtered farmers have a mapped location yet.")
+        return
+
+    lats = [p[1] for p in plotted]
+    lons = [p[2] for p in plotted]
+    m = folium.Map(location=[sum(lats) / len(lats), sum(lons) / len(lons)],
+                    zoom_start=12, tiles="CartoDB positron")
+
+    if gp_geo:
+        folium.GeoJson(
+            gp_geo, name="Village (GP) Boundaries",
+            style_function=lambda f: {"fillColor": C["accent"], "color": C["accent"],
+                                       "weight": 2, "fillOpacity": 0.04},
+            tooltip=folium.GeoJsonTooltip(fields=["village"], aliases=["Village:"]),
+        ).add_to(m)
+
+    if cmd_geo:
+        cmd_colors = {"Command": C["treatment"], "Non command": C["control"],
+                      "Non Command area (Tail end)": "#8B4513"}
+        folium.GeoJson(
+            cmd_geo, name="Command Area Classification",
+            style_function=lambda f: {
+                "fillColor": cmd_colors.get(f["properties"].get("classification"), "#999"),
+                "color": cmd_colors.get(f["properties"].get("classification"), "#999"),
+                "weight": 1, "fillOpacity": 0.10},
+            tooltip=folium.GeoJsonTooltip(fields=["classification", "detail"],
+                                           aliases=["Classification:", "Detail:"]),
+        ).add_to(m)
+
+    for name, lat, lon, info in plotted:
+        grp = info["type"]
+        color = GROUP_COLOR.get(grp, "#999999")
+        land = info.get("land_area")
+        land_txt = f"{land:.2f} ac" if pd.notna(land) else "—"
+        popup_html = (f"<b>{name}</b><br>{info.get('village', '')}<br>"
+                       f"{grp}<br>Land: {land_txt}")
+        folium.CircleMarker(
+            location=[lat, lon], radius=6, color="white", weight=1,
+            fill=True, fill_color=color, fill_opacity=0.9,
+            popup=folium.Popup(popup_html, max_width=220), tooltip=name,
+        ).add_to(m)
+
+    folium.LayerControl(collapsed=False).add_to(m)
+    st_folium(m, use_container_width=True, height=460, returned_objects=[])
+    st.caption(f"📍 {len(plotted)} of {len(info_by_farmer)} currently filtered farmers have a "
+               f"mapped location. 🔵 Treatment · 🟠 Control")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -412,11 +537,11 @@ def render_sidebar(master, summary):
         sel_t = st.radio("t", ["All", "Treatment", "Control"],
                          label_visibility="collapsed", help=H("type_filter"))
         if sel_t == "Treatment":
-            fm = fm[fm[M["type"]] == "Experimental"]
-            fs = fs[fs[S["type"]] == "Experimental"]
+            fm = fm[to_group(fm[M["type"]]) == "Treatment"]
+            fs = fs[to_group(fs[S["type"]]) == "Treatment"]
         elif sel_t == "Control":
-            fm = fm[fm[M["type"]] == "Control"]
-            fs = fs[fs[S["type"]] == "Control"]
+            fm = fm[to_group(fm[M["type"]]) == "Control"]
+            fs = fs[to_group(fs[S["type"]]) == "Control"]
 
         st.divider()
         if not fm.empty:
@@ -476,13 +601,20 @@ def tab_overview(master, summary):
         st.info("No data loaded.")
         return
 
+    st.subheader("Farmer Locations & Village Boundaries", help=H("gps"))
+    st.caption("Every currently filtered farmer, pinned by GPS location. Toggle boundary layers with the control in the top-right of the map.")
+    render_farmer_map(summary)
+    st.divider()
+
     st.markdown("### Key Programme Metrics")
     n_f  = safe_nunique(summary, S["farmer"])
     n_v  = safe_nunique(summary, S["village"])
-    n_de = safe_mean(summary, S["drying_events"])
-    treat_bgl = safe_mean(master[master[M["type"]] == "Experimental"], M["bgl"]) \
+    # Treatment farmers only — Control fields don't run the AWD drying cycle
+    n_de = safe_mean(summary[to_group(summary[S["type"]]) == "Treatment"], S["drying_events"]) \
+           if not summary.empty and S["type"] in summary.columns else None
+    treat_bgl = safe_mean(master[to_group(master[M["type"]]) == "Treatment"], M["bgl"]) \
                 if not master.empty and M["type"] in master.columns else None
-    ctrl_bgl  = safe_mean(master[master[M["type"]] == "Control"], M["bgl"]) \
+    ctrl_bgl  = safe_mean(master[to_group(master[M["type"]]) == "Control"], M["bgl"]) \
                 if not master.empty and M["type"] in master.columns else None
     safe = 0
     if not master.empty and M["bgl"] in master.columns:
@@ -493,7 +625,7 @@ def tab_overview(master, summary):
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     metric_card(c1, "Farmers Enrolled", f"{n_f:,}", f"{n_v} villages", "farmer", C["treatment"])
-    metric_card(c2, "Avg Drying Events", fmt_or_dash(n_de), "per farmer", "drying_events", C["accent"])
+    metric_card(c2, "Avg Drying Events", fmt_or_dash(n_de), "Treatment farmers only", "drying_events", C["accent"])
     metric_card(c3, "In Safe Zone", f"{safe:.0f}%", "BGL −5 to +10 cm", "safe_zone", C["accent"])
     metric_card(c4, "Treatment Avg BGL",
                 fmt_or_dash(treat_bgl, "{:+.1f} cm"),
@@ -517,27 +649,29 @@ def tab_overview(master, summary):
     cl, cr = st.columns([1.3, 1])
 
     with cl:
-        st.subheader("Weekly Water Level Trend", help=H("safe_zone"))
-        st.caption("Avg BGL · Treatment vs Control · green band = safe zone")
-        if not master.empty:
+        st.subheader("Water Level on Field vs Days After Sowing", help=H("das"))
+        st.caption("Avg water level on field · Treatment vs Control · green band = safe zone")
+        if not master.empty and M["das"] in master.columns:
             mm = master.copy()
             mm["Group"] = to_group(mm[M["type"]])
-            wk = (mm.assign(week=mm[M["date"]].dt.to_period("W").dt.start_time)
-                  .groupby(["week", "Group"])[M["bgl"]].mean().reset_index())
+            mm = mm[mm[M["das"]].notna() & (mm[M["das"]] >= 0)]
+            mm["das_week"] = (mm[M["das"]] // 7) * 7
+            wk = mm.groupby(["das_week", "Group"])[M["bgl"]].mean().reset_index()
             fig = go.Figure()
             fig.add_hrect(y0=-5, y1=10, fillcolor=C["safe_zone"],
                           line_width=0, annotation_text="Safe zone",
                           annotation_font_color=C["accent"],
                           annotation_position="top left")
             for grp in ["Treatment", "Control"]:
-                sub = wk[wk["Group"] == grp]
+                sub = wk[wk["Group"] == grp].sort_values("das_week")
                 if sub.empty: continue
-                fig.add_trace(go.Scatter(x=sub["week"], y=sub[M["bgl"]],
+                fig.add_trace(go.Scatter(x=sub["das_week"], y=sub[M["bgl"]],
                     name=grp, mode="lines+markers",
                     line=dict(color=GROUP_COLOR[grp], width=2.5), marker=dict(size=5),
-                    hovertemplate=f"<b>{grp}</b><br>Week: %{{x|%d %b}}<br>Avg BGL: %{{y:.1f}} cm<extra></extra>"))
+                    hovertemplate=f"<b>{grp}</b><br>Day %{{x:.0f}}+ after sowing<br>Avg level: %{{y:.1f}} cm<extra></extra>"))
             fig.add_hline(y=0, line_dash="dash", line_color="#999", line_width=1)
-            fig.update_layout(yaxis=dict(title="BGL (cm)"))
+            fig.update_layout(xaxis=dict(title="Days After Sowing"),
+                               yaxis=dict(title="Water Level on Field (cm)"))
             style_fig(fig, height=320)
             st.plotly_chart(fig, use_container_width=True)
 
@@ -653,13 +787,13 @@ def tab_comparison(master, summary):
 
     c1, c2 = st.columns(2)
     with c1:
-        t_pool = sorted(mv[mv[M["type"]] == "Experimental"][M["farmer"]].dropna().unique())
+        t_pool = sorted(mv[to_group(mv[M["type"]]) == "Treatment"][M["farmer"]].dropna().unique())
         if not t_pool:
             st.warning("No Treatment farmers in the selected villages.")
             return
         farmer_t = st.selectbox("Treatment farmer", t_pool, help=H("type"))
     with c2:
-        c_pool = sorted(mv[mv[M["type"]] == "Control"][M["farmer"]].dropna().unique())
+        c_pool = sorted(mv[to_group(mv[M["type"]]) == "Control"][M["farmer"]].dropna().unique())
         if not c_pool:
             st.warning("No Control farmers in the selected villages.")
             return
@@ -791,8 +925,8 @@ def tab_farmer_summary(summary):
     ds = summary.copy()
     if search: ds = ds[ds[S["farmer"]].str.contains(search, case=False, na=False)]
     if sv != "All": ds = ds[ds[S["village"]] == sv]
-    if st_t == "Treatment": ds = ds[ds[S["type"]] == "Experimental"]
-    elif st_t == "Control": ds = ds[ds[S["type"]] == "Control"]
+    if st_t == "Treatment": ds = ds[to_group(ds[S["type"]]) == "Treatment"]
+    elif st_t == "Control": ds = ds[to_group(ds[S["type"]]) == "Control"]
 
     st.info(f"Showing **{len(ds)}** farmers")
 
@@ -823,35 +957,31 @@ def tab_farmer_summary(summary):
 
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("Top 15 — Irrigation Events", help=H("irrigations_a") + " " + H("irrigations_b"))
-        st.caption("Reported (field-observed) vs Calculated (from water-level readings)")
-        if S["irrigations_a"] in ds.columns and S["irrigations_b"] in ds.columns:
-            top_names = (ds[[S["farmer"], S["irrigations_a"]]].dropna()
-                         .sort_values(S["irrigations_a"], ascending=True).tail(15)[S["farmer"]])
-            melt = ds[ds[S["farmer"]].isin(top_names)][[S["farmer"], S["irrigations_a"], S["irrigations_b"]]]
-            melt = melt.melt(id_vars=S["farmer"], value_vars=[S["irrigations_a"], S["irrigations_b"]],
-                              var_name="Metric", value_name="Count")
-            melt["Metric"] = melt["Metric"].map({S["irrigations_a"]: "Reported", S["irrigations_b"]: "Calculated"})
-            order = pd.CategoricalDtype(top_names, ordered=True)
-            melt[S["farmer"]] = melt[S["farmer"]].astype(order)
-            fig = px.bar(melt.sort_values(S["farmer"]), y=S["farmer"], x="Count", color="Metric",
-                orientation="h", barmode="group",
-                color_discrete_map={"Reported": C["treatment"], "Calculated": C["accent"]},
-                height=380, labels={S["farmer"]: ""})
+        st.subheader("Top 15 — Irrigation Depth (mm)", help=H("total_water_mm"))
+        st.caption("Farmers with the deepest total irrigation this season")
+        if S["total_water_mm"] in ds.columns:
+            dsg = ds.copy()
+            dsg["Group"] = to_group(dsg[S["type"]])
+            top = (dsg[[S["farmer"], "Group", S["total_water_mm"]]].dropna()
+                   .sort_values(S["total_water_mm"], ascending=True).tail(15))
+            fig = px.bar(top, y=S["farmer"], x=S["total_water_mm"], color="Group",
+                orientation="h", color_discrete_map=GROUP_COLOR,
+                height=380, labels={S["total_water_mm"]: "Irrigation Depth (mm)", S["farmer"]: ""})
             style_fig(fig, height=380)
-            fig.update_layout(yaxis=dict(tickfont=dict(size=9)))
+            fig.update_layout(showlegend=False, yaxis=dict(tickfont=dict(size=9)))
             st.plotly_chart(fig, use_container_width=True)
 
     with c2:
-        st.subheader("Top 15 — Drying Events", help=H("drying_events"))
-        if S["drying_events"] in ds.columns:
+        st.subheader("Bottom 15 — Irrigation Depth (mm)", help=H("total_water_mm"))
+        st.caption("Farmers with the shallowest total irrigation this season")
+        if S["total_water_mm"] in ds.columns:
             dsg = ds.copy()
             dsg["Group"] = to_group(dsg[S["type"]])
-            top2 = (dsg[[S["farmer"], "Group", S["drying_events"]]].dropna()
-                    .sort_values(S["drying_events"], ascending=True).tail(15))
-            fig2 = px.bar(top2, y=S["farmer"], x=S["drying_events"], color="Group",
+            bottom = (dsg[[S["farmer"], "Group", S["total_water_mm"]]].dropna()
+                      .sort_values(S["total_water_mm"], ascending=True).head(15))
+            fig2 = px.bar(bottom, y=S["farmer"], x=S["total_water_mm"], color="Group",
                 orientation="h", color_discrete_map=GROUP_COLOR,
-                height=380, labels={S["drying_events"]: "Drying Events", S["farmer"]: ""})
+                height=380, labels={S["total_water_mm"]: "Irrigation Depth (mm)", S["farmer"]: ""})
             style_fig(fig2, height=380)
             fig2.update_layout(showlegend=False, yaxis=dict(tickfont=dict(size=9)))
             st.plotly_chart(fig2, use_container_width=True)
@@ -875,11 +1005,12 @@ def tab_deep_dive(master, summary):
     with cv: sv = st.selectbox("Village", sorted(master[M["village"]].dropna().unique()), help=H("village_filter"))
     with ct:
         type_opts_raw = sorted(master[master[M["village"]] == sv][M["type"]].dropna().unique())
-        type_opts = [relabel_type(t) for t in type_opts_raw]
+        type_opts = sorted(set(relabel_type(t) for t in type_opts_raw))
         st_disp = st.selectbox("Type", type_opts, help=H("type_filter"))
-        st_t = {v: k for k, v in LABEL.items()}.get(st_disp, st_disp)
     with cf:
-        fs = sorted(master[(master[M["village"]] == sv) & (master[M["type"]] == st_t)][M["farmer"]].dropna().unique())
+        in_village = master[M["village"]] == sv
+        in_type = to_group(master[M["type"]]) == st_disp
+        fs = sorted(master[in_village & in_type][M["farmer"]].dropna().unique())
         sel = st.selectbox("Farmer", fs, help=H("farmer"))
 
     if not sel: return
@@ -929,8 +1060,8 @@ def tab_deep_dive(master, summary):
             line=dict(color="white", width=1)),
             hovertemplate="<b>Irrigation (Reported)</b><br>%{x|%d %b}<br>PP: %{y:.1f}<extra></extra>"), row=1, col=1)
 
-    if IRRIG_CALC_COL in fm.columns:
-        irc = fm[fm[IRRIG_CALC_COL] == True]
+    if M["irrig_calc"] in fm.columns:
+        irc = fm[fm[M["irrig_calc"]] == True]
         if not irc.empty:
             fig.add_trace(go.Scatter(x=irc[M["date"]], y=irc[M["pp_reading"]], name="Irrigation (Calculated)",
                 mode="markers", marker=dict(symbol="diamond", size=8, color=C["treatment"],
@@ -985,22 +1116,21 @@ def tab_deep_dive(master, summary):
 
     with st.expander("📋 Raw daily data"):
         show = [c for c in [M["date"], M["das"], M["pp_reading"], M["bgl"],
-                M["fl_rl"], M["phase"], M["change_wl"], M["irrig_cm"],
-                M["irrig_m3"], M["gopal_cm"], M["irrigated"], IRRIG_CALC_COL,
+                M["fl_rl"], M["phase"], M["change_wl"], M["event"],
+                M["gopal_cm"], M["irrigated"], M["irrig_calc"],
                 M["zero_repl"]] if c in fm.columns]
         col_config = {
             M["date"]: st.column_config.DateColumn(format="DD MMM YYYY", help=H("date")),
-            M["das"]: st.column_config.Column(help=H("das")),
+            M["das"]: st.column_config.Column("Days After Sowing", help=H("das")),
             M["pp_reading"]: st.column_config.Column(help=H("pp_reading")),
             M["bgl"]: st.column_config.NumberColumn("BGL", format="%+.1f", help=H("bgl")),
             M["fl_rl"]: st.column_config.Column(help=H("fl_rl")),
             M["phase"]: st.column_config.Column(help=H("phase")),
             M["change_wl"]: st.column_config.Column(help=H("change_wl")),
-            M["irrig_cm"]: st.column_config.Column(help=H("irrig_cm")),
-            M["irrig_m3"]: st.column_config.Column(help=H("irrig_m3")),
+            M["event"]: st.column_config.Column(help=H("event")),
             M["gopal_cm"]: st.column_config.Column(help=H("gopal_cm")),
             M["irrigated"]: st.column_config.CheckboxColumn("Irrigated (Reported)?", help=H("irrigated")),
-            IRRIG_CALC_COL: st.column_config.CheckboxColumn("Irrigated (Calculated)?", help=H("irrig_calc")),
+            M["irrig_calc"]: st.column_config.CheckboxColumn("Irrigated (Calculated)?", help=H("irrig_calc")),
             M["zero_repl"]: st.column_config.Column(help=H("zero_repl")),
         }
         st.dataframe(fm[show].reset_index(drop=True), use_container_width=True, height=300,
@@ -1105,8 +1235,8 @@ def tab_explorer(master, summary):
             col_config = {M["date"]: st.column_config.DateColumn(format="DD MMM YYYY", help=H("date")),
                           M["irrigated"]: st.column_config.CheckboxColumn("Irrigated?", help=H("irrigated")),
                           M["bgl"]: st.column_config.NumberColumn("BGL", format="%+.1f", help=H("bgl"))}
-            if IRRIG_CALC_COL in df_view.columns:
-                col_config[IRRIG_CALC_COL] = st.column_config.CheckboxColumn("Irrigated (Calc.)?", help=H("irrig_calc"))
+            if M["irrig_calc"] in df_view.columns:
+                col_config[M["irrig_calc"]] = st.column_config.CheckboxColumn("Irrigated (Calc.)?", help=H("irrig_calc"))
             for c in df_view.columns:
                 if c in col_config: continue
                 k = key_lookup.get(c)
@@ -1144,7 +1274,7 @@ def tab_explorer(master, summary):
 def show_setup_notice():
     st.info(
         "**Google Sheets not connected yet.**\n\n"
-        "Open `app.py`, find lines 39–45, and paste your published CSV links.\n\n"
+        "Open `app.py`, find lines 50–56, and paste your published CSV links.\n\n"
         "See `README.md` for full step-by-step instructions."
     )
 
