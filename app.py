@@ -380,6 +380,8 @@ def render_farmer_map(summary):
                 "type": relabel_type(row.get(S["type"])),
                 "village": row.get(S["village"], ""),
                 "land_area": row.get(S["land_area"]),
+                "irrig_mm": row.get(S["total_water_mm"]),
+                "savings_mm": row.get(S["savings_mm"]),
             }
 
     plotted = []
@@ -426,8 +428,14 @@ def render_farmer_map(summary):
         color = GROUP_COLOR.get(grp, "#999999")
         land = info.get("land_area")
         land_txt = f"{land:.2f} ac" if pd.notna(land) else "—"
+        irrig = info.get("irrig_mm")
+        irrig_txt = f"{irrig:,.0f} mm" if pd.notna(irrig) else "—"
+        savings = info.get("savings_mm")
+        savings_txt = f"{savings:,.0f} mm" if pd.notna(savings) else "—"
         popup_html = (f"<b>{name}</b><br>{info.get('village', '')}<br>"
-                       f"{grp}<br>Land: {land_txt}")
+                       f"{grp}<br>Land: {land_txt}<br>"
+                       f"Irrigation Depth: {irrig_txt}<br>"
+                       f"Actual Water Savings: {savings_txt}")
         folium.CircleMarker(
             location=[lat, lon], radius=6, color="white", weight=1,
             fill=True, fill_color=color, fill_opacity=0.9,
@@ -646,6 +654,21 @@ def tab_overview(master, summary):
     st.markdown("<br>", unsafe_allow_html=True)
     st.divider()
 
+    if not summary.empty:
+        tw   = safe_sum(summary, S["total_water_m3"])
+        tr   = safe_sum(summary, S["total_recharged_m3"])
+        tl   = safe_sum(summary, S["land_area"])
+        tnau = 1.1 * 4046.8 * tl if tl is not None else None
+        sav  = (tnau - tw) / tnau * 100 if tnau and tw is not None and tnau > 0 else None
+
+        wc1, wc2, wc3, wc4 = st.columns(4)
+        metric_card(wc1, "Total Water Added", fmt_or_dash(tw, "{:,.0f}"), "m³", "total_water_m3", C["treatment"])
+        metric_card(wc2, "Total Recharged", fmt_or_dash(tr, "{:,.0f}"), "m³", "total_recharged_m3", C["accent"])
+        metric_card(wc3, "TNAU Baseline", fmt_or_dash(tnau, "{:,.0f}"), "m³", "tnau_baseline", C["control"])
+        metric_card(wc4, "Est. Savings", fmt_or_dash(sav, "{:.1f}%"), "vs TNAU", "savings_pct", C["accent"])
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.divider()
+
     cl, cr = st.columns([1.3, 1])
 
     with cl:
@@ -738,6 +761,22 @@ def tab_overview(master, summary):
                 color_discrete_map=GROUP_COLOR, height=300)
             style_fig(fig5, height=300)
             st.plotly_chart(fig5, use_container_width=True)
+
+    st.divider()
+
+    st.subheader("Irrigations — Reported vs Calculated, by Village", help=H("irrigations_a") + " " + H("irrigations_b"))
+    st.caption("Reported = enumerator field observation. Calculated = derived from water-level readings (BGL rose >2cm). Large gaps flag data-quality issues worth reviewing.")
+    if not summary.empty and S["irrigations_a"] in summary.columns and S["irrigations_b"] in summary.columns:
+        vi = (summary.groupby(S["village"])[[S["irrigations_a"], S["irrigations_b"]]]
+              .sum().reset_index()
+              .melt(id_vars=S["village"], value_vars=[S["irrigations_a"], S["irrigations_b"]],
+                    var_name="Metric", value_name="Count"))
+        vi["Metric"] = vi["Metric"].map({S["irrigations_a"]: "Reported", S["irrigations_b"]: "Calculated"})
+        fig6 = px.bar(vi, x=S["village"], y="Count", color="Metric", barmode="group",
+            color_discrete_map={"Reported": C["treatment"], "Calculated": C["accent"]},
+            height=300, labels={S["village"]: ""})
+        style_fig(fig6, height=300)
+        st.plotly_chart(fig6, use_container_width=True)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -846,6 +885,8 @@ def tab_comparison(master, summary):
         ("Irrigations (Calculated)", "irrigations_b", "{:.0f}"),
         ("Days Below Surface", "days_below", "{:.0f}"),
         ("Total Water Added (m³)", "total_water_m3", "{:.1f}"),
+        ("Actual Water Savings (%)", "savings_pct", "{:.1f}"),
+        ("Actual Vol. Water Saving (m³)", "savings_m3", "{:.1f}"),
     ]
     for label, key, fs in metrics:
         cc1, cc2 = st.columns(2)
@@ -967,7 +1008,7 @@ def tab_farmer_summary(summary):
                 orientation="h", color_discrete_map=GROUP_COLOR,
                 height=380, labels={S["total_water_mm"]: "Irrigation Depth (mm)", S["farmer"]: ""})
             style_fig(fig, height=380)
-            fig.update_layout(showlegend=False, yaxis=dict(tickfont=dict(size=9)))
+            fig.update_layout(yaxis=dict(tickfont=dict(size=9)))
             st.plotly_chart(fig, use_container_width=True)
 
     with c2:
@@ -982,7 +1023,7 @@ def tab_farmer_summary(summary):
                 orientation="h", color_discrete_map=GROUP_COLOR,
                 height=380, labels={S["total_water_mm"]: "Irrigation Depth (mm)", S["farmer"]: ""})
             style_fig(fig2, height=380)
-            fig2.update_layout(showlegend=False, yaxis=dict(tickfont=dict(size=9)))
+            fig2.update_layout(yaxis=dict(tickfont=dict(size=9)))
             st.plotly_chart(fig2, use_container_width=True)
 
     csv = ds.to_csv(index=False).encode("utf-8")
@@ -1020,22 +1061,22 @@ def tab_deep_dive(master, summary):
     if not sm.empty:
         row = sm.iloc[0]
         st.markdown("#### Season Summary")
-        c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns(9)
-        irr_a_val = row.get(S["irrigations_a"])
-        irr_b_val = row.get(S["irrigations_b"])
-        pairs = [
-            (c1, "Village", str(row.get(S["village"], "—")), "", "village"),
-            (c2, "Type", relabel_type(str(row.get(S["type"], "—"))), "", "type"),
-            (c3, "Land (ac)", str(row.get(S["land_area"], "—")), "", "land_area"),
-            (c4, "Days Mon.", str(int(row.get(S["days_monitored"], 0))) if pd.notna(row.get(S["days_monitored"])) else "—", "", "days_monitored"),
-            (c5, "Dry Events", str(int(row.get(S["drying_events"], 0))) if pd.notna(row.get(S["drying_events"])) else "—", "≥3 days", "drying_events"),
-            (c6, "Irrig. Reported", str(int(irr_a_val)) if pd.notna(irr_a_val) else "—", "field-observed", "irrigations_a"),
-            (c7, "Irrig. Calculated", str(int(irr_b_val)) if pd.notna(irr_b_val) else "—", "from readings", "irrigations_b"),
-            (c8, "Water (m³)", f"{row.get(S['total_water_m3'], 0):.1f}" if pd.notna(row.get(S["total_water_m3"])) else "—", "added", "total_water_m3"),
-            (c9, "Gopal (cm)", f"{row.get(S['avg_gopal_cm'], 0):.2f}" if pd.notna(row.get(S["avg_gopal_cm"])) else "—", "avg depth", "avg_gopal_cm"),
-        ]
-        for col, lab, val, sub, key in pairs:
-            col.metric(lab, val, sub or None, help=H(key))
+        with st.container(key="deep_dive_season_summary"):
+            c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
+            irr_a_val = row.get(S["irrigations_a"])
+            irr_b_val = row.get(S["irrigations_b"])
+            pairs = [
+                (c1, "Village", str(row.get(S["village"], "—")), "", "village"),
+                (c2, "Type", relabel_type(str(row.get(S["type"], "—"))), "", "type"),
+                (c3, "Land (ac)", str(row.get(S["land_area"], "—")), "", "land_area"),
+                (c4, "Days Mon.", str(int(row.get(S["days_monitored"], 0))) if pd.notna(row.get(S["days_monitored"])) else "—", "", "days_monitored"),
+                (c5, "Dry Events", str(int(row.get(S["drying_events"], 0))) if pd.notna(row.get(S["drying_events"])) else "—", "≥3 days", "drying_events"),
+                (c6, "Irrig. Reported", str(int(irr_a_val)) if pd.notna(irr_a_val) else "—", "field-observed", "irrigations_a"),
+                (c7, "Irrig. Calculated", str(int(irr_b_val)) if pd.notna(irr_b_val) else "—", "from readings", "irrigations_b"),
+                (c8, "Water (m³)", f"{row.get(S['total_water_m3'], 0):.1f}" if pd.notna(row.get(S["total_water_m3"])) else "—", "added", "total_water_m3"),
+            ]
+            for col, lab, val, sub, key in pairs:
+                col.metric(lab, val, sub or None, help=H(key))
         st.divider()
 
     st.subheader(f"Daily Water Level — {sel}", help=H("pp_reading"))
@@ -1137,75 +1178,7 @@ def tab_deep_dive(master, summary):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# TAB 5 — WATER & IRRIGATION
-# ═══════════════════════════════════════════════════════════════════
-
-def tab_water(master, summary):
-    st.markdown("### Water & Irrigation Analysis")
-
-    if not summary.empty:
-        tw   = safe_sum(summary, S["total_water_m3"])
-        tr   = safe_sum(summary, S["total_recharged_m3"])
-        tl   = safe_sum(summary, S["land_area"])
-        tnau = 1.1 * 4046.8 * tl if tl is not None else None
-        sav  = (tnau - tw) / tnau * 100 if tnau and tw is not None and tnau > 0 else None
-
-        c1, c2, c3, c4 = st.columns(4)
-        metric_card(c1, "Total Water Added", fmt_or_dash(tw, "{:,.0f}"), "m³", "total_water_m3", C["treatment"])
-        metric_card(c2, "Total Recharged", fmt_or_dash(tr, "{:,.0f}"), "m³", "total_recharged_m3", C["accent"])
-        metric_card(c3, "TNAU Baseline", fmt_or_dash(tnau, "{:,.0f}"), "m³", "tnau_baseline", C["control"])
-        metric_card(c4, "Est. Savings", fmt_or_dash(sav, "{:.1f}%"), "vs TNAU", "savings_pct", C["accent"])
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.divider()
-
-    ca, cb = st.columns(2)
-    with ca:
-        st.subheader("Water Added by Village (m³)", help=H("total_water_m3"))
-        if not summary.empty and S["total_water_m3"] in summary.columns:
-            sm = summary.copy()
-            sm["Group"] = to_group(sm[S["type"]])
-            vw = (sm.groupby([S["village"], "Group"])[S["total_water_m3"]]
-                  .sum().reset_index().rename(columns={S["total_water_m3"]: "total"}))
-            fig = px.bar(vw, x=S["village"], y="total", color="Group", barmode="group",
-                color_discrete_map=GROUP_COLOR,
-                height=300, labels={"total": "m³", S["village"]: ""})
-            style_fig(fig, height=300)
-            st.plotly_chart(fig, use_container_width=True)
-
-    with cb:
-        st.subheader("Gopal Depth Distribution (cm)", help=H("gopal_cm"))
-        if not master.empty:
-            gd = master[master[M["gopal_cm"]].notna() & (master[M["gopal_cm"]] > 0)].copy()
-            gd["Group"] = to_group(gd[M["type"]])
-            fig2 = go.Figure()
-            for grp in ["Treatment", "Control"]:
-                sub = gd[gd["Group"] == grp][M["gopal_cm"]]
-                if sub.empty: continue
-                fig2.add_trace(go.Histogram(x=sub, name=grp, nbinsx=30,
-                    marker_color=GROUP_COLOR[grp], opacity=0.7))
-            fig2.update_layout(barmode="overlay", xaxis=dict(title="Gopal Depth (cm)"), yaxis=dict(title="Events"))
-            style_fig(fig2, height=300)
-            st.plotly_chart(fig2, use_container_width=True)
-
-    st.divider()
-
-    st.subheader("Irrigations — Reported vs Calculated, by Village", help=H("irrigations_a") + " " + H("irrigations_b"))
-    st.caption("Reported = enumerator field observation. Calculated = derived from water-level readings (BGL rose >2cm). Large gaps flag data-quality issues worth reviewing.")
-    if not summary.empty and S["irrigations_a"] in summary.columns and S["irrigations_b"] in summary.columns:
-        vi = (summary.groupby(S["village"])[[S["irrigations_a"], S["irrigations_b"]]]
-              .sum().reset_index()
-              .melt(id_vars=S["village"], value_vars=[S["irrigations_a"], S["irrigations_b"]],
-                    var_name="Metric", value_name="Count"))
-        vi["Metric"] = vi["Metric"].map({S["irrigations_a"]: "Reported", S["irrigations_b"]: "Calculated"})
-        fig3 = px.bar(vi, x=S["village"], y="Count", color="Metric", barmode="group",
-            color_discrete_map={"Reported": C["treatment"], "Calculated": C["accent"]},
-            height=300, labels={S["village"]: ""})
-        style_fig(fig3, height=300)
-        st.plotly_chart(fig3, use_container_width=True)
-
-
-# ═══════════════════════════════════════════════════════════════════
-# TAB 6 — DATA EXPLORER
+# TAB 5 — DATA EXPLORER
 # ═══════════════════════════════════════════════════════════════════
 
 def tab_explorer(master, summary):
@@ -1297,6 +1270,8 @@ def apply_css():
         div[data-testid="stExpander"] {{ background:{C['surface']};border-radius:8px;
             border:1px solid {C['border']}; }}
         h1,h2,h3,h4 {{ color:{C['text']}; }}
+        .st-key-deep_dive_season_summary div[data-testid="stMetricValue"] {{ font-size:16px; }}
+        .st-key-deep_dive_season_summary div[data-testid="stMetricLabel"] {{ font-size:12px; }}
         </style>
     """, unsafe_allow_html=True)
 
@@ -1319,20 +1294,18 @@ def main():
 
     master_f, summary_f = render_sidebar(master, summary)
 
-    t1, t2, t3, t4, t5, t6 = st.tabs([
+    t1, t2, t3, t4, t5 = st.tabs([
         "📊 Programme Overview",
         "⚖️ Treatment vs Control",
         "📋 Farmer Summary",
         "👤 Farmer Deep Dive",
-        "💧 Water & Irrigation",
         "🔍 Data Explorer",
     ])
     with t1: tab_overview(master_f, summary_f)
     with t2: tab_comparison(master_f, summary_f)
     with t3: tab_farmer_summary(summary_f)
     with t4: tab_deep_dive(master_f, summary_f)
-    with t5: tab_water(master_f, summary_f)
-    with t6: tab_explorer(master_f, summary_f)
+    with t5: tab_explorer(master_f, summary_f)
 
 
 if __name__ == "__main__":
