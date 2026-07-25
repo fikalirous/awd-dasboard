@@ -638,8 +638,8 @@ def tab_overview(master, summary):
             st.markdown(
                 f"<div style='height:4px;background:{C['accent']};border-radius:3px;"
                 f"margin:-1rem -1rem 0.6rem -1rem;'></div>", unsafe_allow_html=True)
-            st.metric("Avg Irrigations (Reported)", fmt_or_dash(irr_a),
-                       f"{irr_b:.1f} calculated" if irr_b is not None and pd.notna(irr_b) else None,
+            st.metric("Avg Irrigations (Calculated)", fmt_or_dash(irr_b),
+                       f"{irr_a:.1f} reported" if irr_a is not None and pd.notna(irr_a) else None,
                        delta_color="off",
                        help=H("irrigations_a") + " " + H("irrigations_b"))
 
@@ -695,7 +695,7 @@ def tab_overview(master, summary):
 
     ca, cb = st.columns(2)
     with ca:
-        st.subheader("Avg BGL by Village", help=H("bgl"))
+        st.markdown("#### Water relative to Soil Surface by Village", help=H("bgl"))
         if not master.empty:
             mm = master.copy()
             mm["Group"] = to_group(mm[M["type"]])
@@ -846,7 +846,6 @@ def tab_comparison(master, summary):
         ("Irrigations (Calculated)", "irrigations_b", "{:.0f}"),
         ("Days Below Surface", "days_below", "{:.0f}"),
         ("Total Water Added (m³)", "total_water_m3", "{:.1f}"),
-        ("Avg Gopal Depth (cm)", "avg_gopal_cm", "{:.2f}"),
     ]
     for label, key, fs in metrics:
         cc1, cc2 = st.columns(2)
