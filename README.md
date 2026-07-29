@@ -385,7 +385,9 @@ command_area.geojson) next to `app.py` — see Step 2 below.
 
 ## COLUMN NAMES THIS DASHBOARD EXPECTS
 
-These match Apps Script v9. Both Irrigation columns are written as YES/NO text.
+These match Apps Script v10. Master Analysis and the daily Analysis sheet are
+unchanged from v9 — only the Summary sheet was restructured. Both Irrigation
+columns are written as YES/NO text.
 
 ### Master Analysis (21 columns)
 A: Farmer Name
@@ -414,15 +416,21 @@ The dashboard computes its own "Days After Sowing" (Date − Date of Sowing)
 for the Days-After-Sowing trend chart — it doesn't rely on column I, which
 is just a sequential reading count, not a calendar-based day count.
 
-### Summary (key columns used, of 49 total)
-Farmer Name, Village (Gram Panchayat), Type, Land Area (acres),
-GP Coordinates (Lat, Long), Days Monitored, No. of Drying Events,
-Days Water Above Surface, Days Water Below Surface, Dry Days (>=25cm),
+### Summary (key columns used, of 43 total)
+Name of the Village (Gram Panchayat), Name of the Farmer, Type of Monitoring
+Site, Size of Monitoring Field (acres), Location of Monitoring Sites - GPS,
 No. Irrigations (a) Reported, No. Irrigations (b) Calculated,
-Total Irrigated Water Depth (mm), Total Irrigated Water Depth (m3),
-Total Water Recharged (m3), Avg Drying Days Phase 1-4,
-RL-Flood/Inter/Soil (mm), FL-Flood/Inter/Soil (mm),
-Actual Water Savings (%), Actual Water Savings (mm), Actual Vol. Water Saving (m3)
+No. of Days Water Level Stayed Above/Below Surface,
+No. of Dry Days (Water Level >=25cm Below),
+No. of Field Drying Events (>=3 Consecutive Days Below Surface),
+Avg Drying Days Phase 1-4 (DAS), RL-Flood/Inter/Soil (mm), FL-Flood/Inter/Soil (mm),
+Total Irrigated Water Depth (mm), Total Volumetric Water Irrigated (m3),
+Total Water Recharged (mm/m3), Actual Water Savings (%), Actual Water Savings (mm),
+Actual Vol. Water Saving (m3), Total Rainfall During Monitoring Period (mm)
+
+Note: "Actual Water Savings (%)" is a Sheets custom text format and is
+exported as a literal string like "-40.69%" — the dashboard strips the "%"
+before parsing it as a number.
 
 ---
 

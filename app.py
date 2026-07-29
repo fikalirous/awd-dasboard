@@ -48,11 +48,11 @@ st.set_page_config(
 # ★ STEP 1 — PASTE YOUR GOOGLE SHEETS CSV LINKS HERE ★
 # ═══════════════════════════════════════════════════════════════════
 MASTER_ANALYSIS_URL = (
-    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=1129685650&single=true&output=csv"
+    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=2089695520&single=true&output=csv"
 )
 
 SUMMARY_URL = (
-    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=1264516221&single=true&output=csv"
+    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=899102818&single=true&output=csv"
 )
 
 # ═══════════════════════════════════════════════════════════════════
@@ -136,58 +136,59 @@ M = {
 # COLUMN NAMES — Summary (49 columns) — Apps Script v9
 # ═══════════════════════════════════════════════════════════════════
 S = {
-    "serial"            : "#",
-    "farmer"            : "Farmer Name",
-    "village"           : "Village (Gram Panchayat)",
-    "type"              : "Type",
-    "method"            : "Method of Cultivation",
-    "land_area"         : "Land Area (acres)",
-    "gps"               : "GP Coordinates (Lat, Long)",
-    "sowing_date"       : "Date of Sowing",
+    "serial"            : " ",  # header is a blank cell in the sheet ("Sl No" is the intent)
+    "village"           : "Name of the Village (Gram Panchayat)",
+    "farmer"            : "Name of the Farmer",
+    "type"              : "Type of Monitoring Site",
+    "land_area"         : "Size of Monitoring Field (acres)",
+    "gps"               : "Location of Monitoring Sites - GPS",
+    "method"            : "Method of Cultivation (Sowing)",
+    "sowing_date"       : "Date of Sowing of Seeds in the Field",
     "cm_start"          : "Start Date of Continuous Monitoring",
     "cm_end"            : "End Date of Continuous Monitoring",
     "harvest_date"      : "Date of Harvest",
-    "days_monitored"    : "Days Monitored",
-    "duplicate_days"    : "Duplicate Days",
-    "missing_days"      : "Missing Days",
-    "error_margin"      : "Error Margin",
-    "days_above"        : "Days Water Above Surface",
-    "days_below"        : "Days Water Below Surface",
-    "dry_days"          : "Dry Days (>=25cm)",
-    "drying_events"     : "No. of Drying Events",
-    "avg_between_dry"   : "Avg Wet Days Between Dry Cycles",
-    "min_between_dry"   : "Min Days Between Dry Periods",
-    "max_between_dry"   : "Max Days Between Dry Periods",
     "irrigations_a"     : "No. Irrigations (a) Reported",
     "irrigations_b"     : "No. Irrigations (b) Calculated",
-    "avg_between_wet"   : "Avg Days Between Wet Events",
-    "min_between_wet"   : "Min Days Between Wet Events",
-    "max_between_wet"   : "Max Days Between Wet Events",
+    "days_monitored"    : "No. of Days Monitored",
+    "duplicate_days"    : "No. of Duplicate Days",
+    "missing_days"      : "No. of Missing Days",
+    "error_margin"      : "Error Margin of Data Collection",
+    "days_above"        : "No. of Days Water Level Stayed Above Surface",
+    "days_below"        : "No. of Days Water Level Stayed Below Surface",
+    "max_wl_events"     : "Days Water Level >10cm Above Surface (Deep Flood)",
+    "min_wl_events"     : "Days Water Level >10cm Below Surface (Deep Dry)",
+    "dry_days"          : "No. of Dry Days (Water Level >=25cm Below)",
+    "drying_events"     : "No. of Field Drying Events (>=3 Consecutive Days Below Surface)",
+    "max_dry_duration"  : "Max Dry Period Duration (days)",
     "avg_drying_overall": "Avg Drying Days (Overall)",
-    "avg_drying_p1"     : "Avg Drying Days Phase 1 (0-30)",
-    "avg_drying_p2"     : "Avg Drying Days Phase 2 (30-60)",
-    "avg_drying_p3"     : "Avg Drying Days Phase 3 (60-90)",
-    "avg_drying_p4"     : "Avg Drying Days Phase 4 (90+)",
-    "max_wl_events"     : "Max WL Events (>10cm above)",
-    "min_wl_events"     : "Min WL Events (>10cm below)",
-    "total_water_mm"    : "Total Irrigated Water Depth (mm)",
-    "total_water_m3"    : "Total Irrigated Water Depth (m3)",
-    "total_recharged_mm": "Total Water Recharged (mm)",
-    "total_recharged_m3": "Total Water Recharged (m3)",
+    "avg_drying_p1"     : "Avg Drying Days Phase 1 (0-30 DAS)",
+    "avg_drying_p2"     : "Avg Drying Days Phase 2 (30-60 DAS)",
+    "avg_drying_p3"     : "Avg Drying Days Phase 3 (60-90 DAS)",
+    "avg_drying_p4"     : "Avg Drying Days Phase 4 (90+ DAS)",
     "rl_flood_mm"       : "RL-Flood (mm)",
     "rl_inter_mm"       : "RL-Inter (mm)",
     "rl_soil_mm"        : "RL-Soil (mm)",
     "fl_flood_mm"       : "FL-Flood (mm)",
     "fl_inter_mm"       : "FL-Inter (mm)",
     "fl_soil_mm"        : "FL-Soil (mm)",
-    "max_dry_duration"  : "Max Dry Period Duration (days)",
+    "total_water_mm"    : "Total Irrigated Water Depth (mm)",
+    "total_water_m3"    : "Total Volumetric Water Irrigated (m3)",
+    "total_recharged_mm": "Total Water Recharged (mm)",
+    "total_recharged_m3": "Total Volumetric Water Recharged (m3)",
     "savings_pct"       : "Actual Water Savings (%)",
     "savings_mm"        : "Actual Water Savings (mm)",
     "savings_m3"        : "Actual Vol. Water Saving (m3)",
-    # This column was removed outright in the v9 rewrite (not renamed) —
-    # every place that reads it already falls back to "—" when absent, so
-    # this mapping is kept only so those fallbacks stay well-defined.
+    "rainfall"          : "Total Rainfall During Monitoring Period (mm)",
+    # These columns were removed outright in the v10 rewrite (not renamed) —
+    # every place that reads them already falls back to "—" when absent, so
+    # these mappings are kept only so those fallbacks stay well-defined.
     "avg_gopal_cm"      : "Avg Irrig. Depth - Gopal (cm)",
+    "avg_between_dry"   : "Avg Wet Days Between Dry Cycles",
+    "min_between_dry"   : "Min Days Between Dry Periods",
+    "max_between_dry"   : "Max Days Between Dry Periods",
+    "avg_between_wet"   : "Avg Days Between Wet Events",
+    "min_between_wet"   : "Min Days Between Wet Events",
+    "max_between_wet"   : "Max Days Between Wet Events",
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -253,6 +254,7 @@ TIPS = {
     "max_wl_events" : "Count of days the water level was more than 10cm above the soil surface — flags over-flooding / excess water input.",
     "min_wl_events" : "Count of days the water level was more than 10cm below the soil surface — flags deep drying / potential crop stress.",
     "max_dry_duration" : "The longest single drying event this season, in days.",
+    "rainfall"         : "Total rainfall recorded during the monitoring period, in millimetres.",
     # Water volumes
     "total_water_mm"     : "Total irrigation water added across the season, in millimetres depth, using Gopal's normalised formula.",
     "total_water_m3"     : "Total irrigation water added across the season, in cubic metres — depth scaled by the field's land area.",
@@ -333,10 +335,16 @@ def load_summary(url):
                 df[col] = pd.to_datetime(df[col], dayfirst=True, errors="coerce")
         num_s = [v for k, v in S.items()
                  if k not in ["serial", "farmer", "village", "type", "method",
-                              "sowing_date", "cm_start", "cm_end", "harvest_date", "gps"]]
+                              "sowing_date", "cm_start", "cm_end", "harvest_date", "gps",
+                              "savings_pct"]]
         for col in num_s:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
+        # Actual Water Savings (%) is a Sheets custom text format ('0.00"%"'),
+        # so it's exported as a literal string like "-40.69%" — strip the % first.
+        if S["savings_pct"] in df.columns:
+            df[S["savings_pct"]] = pd.to_numeric(
+                df[S["savings_pct"]].astype(str).str.rstrip("%").str.strip(), errors="coerce")
         for col in [S["farmer"], S["village"], S["type"], S["gps"]]:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
