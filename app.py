@@ -1080,13 +1080,13 @@ def tab_compare_farmers(master, summary):
     fsc = summary[summary[S["farmer"]] == farmer_c]
 
     st.subheader(f"Water Level Trend — {farmer_t} vs {farmer_c}", help=H("bgl"))
-    st.caption("Daily BGL (water level relative to soil surface). ▲ = irrigation reported.")
+    st.caption("Daily water level relative to soil surface. ▲ = irrigation reported.")
     fig2 = go.Figure()
     fig2.add_hrect(y0=-5, y1=10, fillcolor=C["safe_zone"], line_width=0)
     fig2.add_trace(go.Scatter(x=fmt[M["date"]], y=fmt[M["bgl"]], name=f"{farmer_t} (Treatment)",
         mode="lines", line=dict(color=C["treatment"], width=2.5),
         hovertemplate="%{x|%d %b}<br>BGL: %{y:+.1f} cm<extra></extra>"))
-    fig2.add_trace(go.Scatter(x=fmc[M["date"]], y=fmc[M["bgl"]], name=f"{farmer_c} (Control)",
+    fig2.add_trace(go.Scatter(x=fmc[M["date"]], y=fmc[M["water level reading"]], name=f"{farmer_c} (Control)",
         mode="lines", line=dict(color=C["control"], width=2.5),
         hovertemplate="%{x|%d %b}<br>BGL: %{y:+.1f} cm<extra></extra>"))
     irt = fmt[fmt[M["irrigated"]] == True]
