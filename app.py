@@ -793,8 +793,6 @@ def tab_results_overview(master_f, summary_f, master, summary):
 
     # ── Row 1 charts (sidebar-filtered) ──────────────────────────────
     #cl, cr = st.columns([1.3, 1])
-    cl, cr = st.columns([1, 1])
-
     #with cl:
         #st.subheader("Water Level Changes in the Field", help=H("das"))
         #st.caption("Avg water level on field vs Days After Sowing · Treatment vs Control · green band = safe zone")
@@ -820,81 +818,187 @@ def tab_results_overview(master_f, summary_f, master, summary):
             #fig.update_layout(xaxis=dict(title="Days After Sowing"),
                                #yaxis=dict(title="Water Level on Field (cm)"))
             #style_fig(fig, height=340)
-            #st.plotly_chart(fig, use_container_width=True)
-    with cl:
-        st.subheader("Hydrological Phase Distribution (Treatment)", help=H("phase"))
-        st.caption("Outer ring = Treatment (blue) · Inner ring = Control (red) · FL group then RL group")
-        if not master_f.empty:
-            def _phase_counts(df):
-                pc = df[M["phase"]].value_counts().reset_index()
-                pc.columns = ["phase", "count"]
-                pc["phase"] = pd.Categorical(pc["phase"], categories=PHASE_ORDER, ordered=True)
-                return pc.sort_values("phase").dropna(subset=["phase"])
+            #st.plotly_chart(fig, use_container_width=True)    
+    #with cr:
+        #st.subheader("Hydrological Phase Distribution (Control)", help=H("phase"))
+        #st.caption("Outer ring = Treatment (blue) · Inner ring = Control (red) · FL group then RL group")
+        #if not master_f.empty:
+            #def _phase_counts(df):
+                #pc = df[M["phase"]].value_counts().reset_index()
+                #pc.columns = ["phase", "count"]
+                #pc["phase"] = pd.Categorical(pc["phase"], categories=PHASE_ORDER, ordered=True)
+                #return pc.sort_values("phase").dropna(subset=["phase"])
 
-            mm = master_f.copy()
-            mm["Group"] = to_group(mm[M["type"]])
-            pc_t = _phase_counts(mm[mm["Group"] == "Treatment"])
+            #mm = master_f.copy()
+            #mm["Group"] = to_group(mm[M["type"]])
+            #pc_t = _phase_counts(mm[mm["Group"] == "Treatment"])
             #pc_c = _phase_counts(mm[mm["Group"] == "Control"])
 
-            fig_donut = go.Figure()
-            if not pc_t.empty:
-                fig_donut.add_trace(go.Pie(
-                    labels=pc_t["phase"], values=pc_t["count"], sort=False,
-                    hole=0.62, domain=dict(x=[0, 1], y=[0, 1]),
-                    marker=dict(colors=[C["phase_treatment"].get(p, "#999") for p in pc_t["phase"]],
-                                line=dict(color="white", width=1)),
-                    textinfo="none", name="Treatment",
-                    hovertemplate="<b>Treatment</b><br>%{label}: %{percent}<extra></extra>"))
-            if not pc_c.empty:
-                fig_donut.add_trace(go.Pie(
-                    labels=pc_c["phase"], values=pc_c["count"], sort=False,
-                    hole=0.35, domain=dict(x=[0.19, 0.81], y=[0.19, 0.81]),
-                    marker=dict(colors=[C["phase_control"].get(p, "#999") for p in pc_c["phase"]],
-                                line=dict(color="white", width=1)),
-                    textinfo="none", name="Control",
-                    hovertemplate="<b>Control</b><br>%{label}: %{percent}<extra></extra>"))
-            fig_donut.update_layout(height=340, margin=dict(l=10, r=10, t=10, b=10),
-                paper_bgcolor="rgba(0,0,0,0)", showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5, font_size=9))
-            st.plotly_chart(fig_donut, use_container_width=True)     
-    with cr:
-        st.subheader("Hydrological Phase Distribution (Control)", help=H("phase"))
-        st.caption("Outer ring = Treatment (blue) · Inner ring = Control (red) · FL group then RL group")
-        if not master_f.empty:
-            def _phase_counts(df):
-                pc = df[M["phase"]].value_counts().reset_index()
-                pc.columns = ["phase", "count"]
-                pc["phase"] = pd.Categorical(pc["phase"], categories=PHASE_ORDER, ordered=True)
-                return pc.sort_values("phase").dropna(subset=["phase"])
+            #fig_donut = go.Figure()
+            #if not pc_t.empty:
+                #fig_donut.add_trace(go.Pie(
+                    #labels=pc_t["phase"], values=pc_t["count"], sort=False,
+                    #hole=0.62, domain=dict(x=[0, 1], y=[0, 1]),
+                    #marker=dict(colors=[C["phase_treatment"].get(p, "#999") for p in pc_t["phase"]],
+                                #line=dict(color="white", width=1)),
+                    #textinfo="none", name="Treatment",
+                    #hovertemplate="<b>Treatment</b><br>%{label}: %{percent}<extra></extra>"))
+            #if not pc_c.empty:
+                #fig_donut.add_trace(go.Pie(
+                    #labels=pc_c["phase"], values=pc_c["count"], sort=False,
+                    #hole=0.35, domain=dict(x=[0.19, 0.81], y=[0.19, 0.81]),
+                    #marker=dict(colors=[C["phase_control"].get(p, "#999") for p in pc_c["phase"]],
+                                #line=dict(color="white", width=1)),
+                    #textinfo="none", name="Control",
+                    #hovertemplate="<b>Control</b><br>%{label}: %{percent}<extra></extra>"))
+            #fig_donut.update_layout(height=340, margin=dict(l=10, r=10, t=10, b=10),
+                #paper_bgcolor="rgba(0,0,0,0)", showlegend=True,
+                #legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5, font_size=9))
+            #st.plotly_chart(fig_donut, use_container_width=True)
 
-            mm = master_f.copy()
-            mm["Group"] = to_group(mm[M["type"]])
-            #pc_t = _phase_counts(mm[mm["Group"] == "Treatment"])
-            pc_c = _phase_counts(mm[mm["Group"] == "Control"])
+if not master_f.empty:
 
-            fig_donut = go.Figure()
-            if not pc_t.empty:
-                fig_donut.add_trace(go.Pie(
-                    labels=pc_t["phase"], values=pc_t["count"], sort=False,
-                    hole=0.62, domain=dict(x=[0, 1], y=[0, 1]),
-                    marker=dict(colors=[C["phase_treatment"].get(p, "#999") for p in pc_t["phase"]],
-                                line=dict(color="white", width=1)),
-                    textinfo="none", name="Treatment",
-                    hovertemplate="<b>Treatment</b><br>%{label}: %{percent}<extra></extra>"))
-            if not pc_c.empty:
-                fig_donut.add_trace(go.Pie(
-                    labels=pc_c["phase"], values=pc_c["count"], sort=False,
-                    hole=0.35, domain=dict(x=[0.19, 0.81], y=[0.19, 0.81]),
-                    marker=dict(colors=[C["phase_control"].get(p, "#999") for p in pc_c["phase"]],
-                                line=dict(color="white", width=1)),
-                    textinfo="none", name="Control",
-                    hovertemplate="<b>Control</b><br>%{label}: %{percent}<extra></extra>"))
-            fig_donut.update_layout(height=340, margin=dict(l=10, r=10, t=10, b=10),
-                paper_bgcolor="rgba(0,0,0,0)", showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5, font_size=9))
-            st.plotly_chart(fig_donut, use_container_width=True)
+    def _phase_counts(df):
+        pc = df[M["phase"]].value_counts().reset_index()
+        pc.columns = ["phase", "count"]
+        pc["phase"] = pd.Categorical(
+            pc["phase"],
+            categories=PHASE_ORDER,
+            ordered=True
+        )
+        return pc.sort_values("phase").dropna(subset=["phase"])
 
-    st.divider()
+    mm = master_f.copy()
+    mm["Group"] = to_group(mm[M["type"]])
+
+    pc_t = _phase_counts(mm[mm["Group"] == "Treatment"])
+    pc_c = _phase_counts(mm[mm["Group"] == "Control"])
+
+    cl, cr = st.columns([1, 1])
+
+  cl, cr = st.columns([1, 1])
+
+with cl:
+    st.subheader("Hydrological Phase Distribution (Treatment)", help=H("phase"))
+    st.caption("Treatment · FL group then RL group")
+
+    if not master_f.empty:
+
+        def _phase_counts(df):
+            pc = df[M["phase"]].value_counts().reset_index()
+            pc.columns = ["phase", "count"]
+            pc["phase"] = pd.Categorical(
+                pc["phase"],
+                categories=PHASE_ORDER,
+                ordered=True
+            )
+            return pc.sort_values("phase").dropna(subset=["phase"])
+
+        mm = master_f.copy()
+        mm["Group"] = to_group(mm[M["type"]])
+
+        pc_t = _phase_counts(
+            mm[mm["Group"] == "Treatment"]
+        )
+
+        fig_donut = go.Figure()
+
+        if not pc_t.empty:
+            fig_donut.add_trace(go.Pie(
+                labels=pc_t["phase"],
+                values=pc_t["count"],
+                sort=False,
+                hole=0.62,
+                domain=dict(x=[0, 1], y=[0, 1]),
+                marker=dict(
+                    colors=[
+                        C["phase_treatment"].get(p, "#999")
+                        for p in pc_t["phase"]
+                    ],
+                    line=dict(color="white", width=1)
+                ),
+                textinfo="none",
+                name="Treatment",
+                hovertemplate=(
+                    "<b>Treatment</b><br>"
+                    "%{label}: %{percent}"
+                    "<extra></extra>"
+                )
+            ))
+
+        fig_donut.update_layout(
+            height=340,
+            margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor="rgba(0,0,0,0)",
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.18,
+                xanchor="center",
+                x=0.5,
+                font_size=9
+            )
+        )
+
+        st.plotly_chart(fig_donut, use_container_width=True)
+
+  with cr:
+    st.subheader("Hydrological Phase Distribution (Control)", help=H("phase"))
+    st.caption("Control · FL group then RL group")
+
+    if not master_f.empty:
+
+        mm = master_f.copy()
+        mm["Group"] = to_group(mm[M["type"]])
+
+        pc_c = _phase_counts(
+            mm[mm["Group"] == "Control"]
+        )
+
+        fig_donut = go.Figure()
+
+        if not pc_c.empty:
+            fig_donut.add_trace(go.Pie(
+                labels=pc_c["phase"],
+                values=pc_c["count"],
+                sort=False,
+                hole=0.62,
+                domain=dict(x=[0, 1], y=[0, 1]),
+                marker=dict(
+                    colors=[
+                        C["phase_control"].get(p, "#999")
+                        for p in pc_c["phase"]
+                    ],
+                    line=dict(color="white", width=1)
+                ),
+                textinfo="none",
+                name="Control",
+                hovertemplate=(
+                    "<b>Control</b><br>"
+                    "%{label}: %{percent}"
+                    "<extra></extra>"
+                )
+            ))
+
+        fig_donut.update_layout(
+            height=340,
+            margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor="rgba(0,0,0,0)",
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.18,
+                xanchor="center",
+                x=0.5,
+                font_size=9
+            )
+        )
+
+        st.plotly_chart(fig_donut, use_container_width=True)
+
+st.divider()
 
     # ── Row 2 charts (sidebar-filtered, grouped bar by village) ──────
     c9a, c9b = st.columns(2)
