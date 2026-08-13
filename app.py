@@ -792,37 +792,37 @@ def tab_results_overview(master_f, summary_f, master, summary):
     st.divider()
 
     # ── Row 1 charts (sidebar-filtered) ──────────────────────────────
-    cl, cr = st.columns([1.3, 1])
+    #cl, cr = st.columns([1.3, 1])
+    cl, cr = st.columns([1, 1])
 
-    with cl:
-        st.subheader("Water Level Changes in the Field", help=H("das"))
-        st.caption("Avg water level on field vs Days After Sowing · Treatment vs Control · green band = safe zone")
-        if not master_f.empty and M["das"] in master_f.columns:
-            mm = master_f.copy()
-            mm["Group"] = to_group(mm[M["type"]])
-            mm = mm[mm[M["das"]].notna() & (mm[M["das"]] >= 0)]
-            mm["das_week"] = (mm[M["das"]] // 7) * 7
-            wk = mm.groupby(["das_week", "Group"])[M["bgl"]].mean().reset_index()
-            fig = go.Figure()
-            fig.add_hrect(y0=-5, y1=10, fillcolor=C["safe_zone"],
-                          line_width=0, annotation_text="Safe zone",
-                          annotation_font_color=C["accent"],
-                          annotation_position="top left")
-            for grp in ["Treatment", "Control"]:
-                sub = wk[wk["Group"] == grp].sort_values("das_week")
-                if sub.empty: continue
-                fig.add_trace(go.Scatter(x=sub["das_week"], y=sub[M["bgl"]],
-                    name=grp, mode="lines+markers",
-                    line=dict(color=GROUP_COLOR[grp], width=2.5), marker=dict(size=5),
-                    hovertemplate=f"<b>{grp}</b><br>Day %{{x:.0f}}+ after sowing<br>Avg level: %{{y:.1f}} cm<extra></extra>"))
-            fig.add_hline(y=0, line_dash="dash", line_color="#999", line_width=1)
-            fig.update_layout(xaxis=dict(title="Days After Sowing"),
-                               yaxis=dict(title="Water Level on Field (cm)"))
-            style_fig(fig, height=340)
-            st.plotly_chart(fig, use_container_width=True)
-
-    with cr:
-        st.subheader("Hydrological Phase Distribution (AWD vs. Continuous Flooding)", help=H("phase"))
+    #with cl:
+        #st.subheader("Water Level Changes in the Field", help=H("das"))
+        #st.caption("Avg water level on field vs Days After Sowing · Treatment vs Control · green band = safe zone")
+        #if not master_f.empty and M["das"] in master_f.columns:
+            #mm = master_f.copy()
+            #mm["Group"] = to_group(mm[M["type"]])
+            #mm = mm[mm[M["das"]].notna() & (mm[M["das"]] >= 0)]
+            #mm["das_week"] = (mm[M["das"]] // 7) * 7
+            #wk = mm.groupby(["das_week", "Group"])[M["bgl"]].mean().reset_index()
+            #fig = go.Figure()
+            #fig.add_hrect(y0=-5, y1=10, fillcolor=C["safe_zone"],
+                          #line_width=0, annotation_text="Safe zone",
+                          #annotation_font_color=C["accent"],
+                          #annotation_position="top left")
+            #for grp in ["Treatment", "Control"]:
+                #sub = wk[wk["Group"] == grp].sort_values("das_week")
+                #if sub.empty: continue
+                #fig.add_trace(go.Scatter(x=sub["das_week"], y=sub[M["bgl"]],
+                    #name=grp, mode="lines+markers",
+                    #line=dict(color=GROUP_COLOR[grp], width=2.5), marker=dict(size=5),
+                    #hovertemplate=f"<b>{grp}</b><br>Day %{{x:.0f}}+ after sowing<br>Avg level: %{{y:.1f}} cm<extra></extra>"))
+            #fig.add_hline(y=0, line_dash="dash", line_color="#999", line_width=1)
+            #fig.update_layout(xaxis=dict(title="Days After Sowing"),
+                               #yaxis=dict(title="Water Level on Field (cm)"))
+            #style_fig(fig, height=340)
+            #st.plotly_chart(fig, use_container_width=True)
+    with c1:
+        st.subheader("Hydrological Phase Distribution (Treatment)", help=H("phase"))
         st.caption("Outer ring = Treatment (blue) · Inner ring = Control (red) · FL group then RL group")
         if not master_f.empty:
             def _phase_counts(df):
@@ -834,6 +834,42 @@ def tab_results_overview(master_f, summary_f, master, summary):
             mm = master_f.copy()
             mm["Group"] = to_group(mm[M["type"]])
             pc_t = _phase_counts(mm[mm["Group"] == "Treatment"])
+            #pc_c = _phase_counts(mm[mm["Group"] == "Control"])
+
+            fig_donut = go.Figure()
+            if not pc_t.empty:
+                fig_donut.add_trace(go.Pie(
+                    labels=pc_t["phase"], values=pc_t["count"], sort=False,
+                    hole=0.62, domain=dict(x=[0, 1], y=[0, 1]),
+                    marker=dict(colors=[C["phase_treatment"].get(p, "#999") for p in pc_t["phase"]],
+                                line=dict(color="white", width=1)),
+                    textinfo="none", name="Treatment",
+                    hovertemplate="<b>Treatment</b><br>%{label}: %{percent}<extra></extra>"))
+            if not pc_c.empty:
+                fig_donut.add_trace(go.Pie(
+                    labels=pc_c["phase"], values=pc_c["count"], sort=False,
+                    hole=0.35, domain=dict(x=[0.19, 0.81], y=[0.19, 0.81]),
+                    marker=dict(colors=[C["phase_control"].get(p, "#999") for p in pc_c["phase"]],
+                                line=dict(color="white", width=1)),
+                    textinfo="none", name="Control",
+                    hovertemplate="<b>Control</b><br>%{label}: %{percent}<extra></extra>"))
+            fig_donut.update_layout(height=340, margin=dict(l=10, r=10, t=10, b=10),
+                paper_bgcolor="rgba(0,0,0,0)", showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5, font_size=9))
+            st.plotly_chart(fig_donut, use_container_width=True)     
+    with cr:
+        st.subheader("Hydrological Phase Distribution (Control)", help=H("phase"))
+        st.caption("Outer ring = Treatment (blue) · Inner ring = Control (red) · FL group then RL group")
+        if not master_f.empty:
+            def _phase_counts(df):
+                pc = df[M["phase"]].value_counts().reset_index()
+                pc.columns = ["phase", "count"]
+                pc["phase"] = pd.Categorical(pc["phase"], categories=PHASE_ORDER, ordered=True)
+                return pc.sort_values("phase").dropna(subset=["phase"])
+
+            mm = master_f.copy()
+            mm["Group"] = to_group(mm[M["type"]])
+            #pc_t = _phase_counts(mm[mm["Group"] == "Treatment"])
             pc_c = _phase_counts(mm[mm["Group"] == "Control"])
 
             fig_donut = go.Figure()
