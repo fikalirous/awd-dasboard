@@ -1086,7 +1086,7 @@ def tab_compare_farmers(master, summary):
     fig2.add_trace(go.Scatter(x=fmt[M["date"]], y=fmt[M["bgl"]], name=f"{farmer_t} (Treatment)",
         mode="lines", line=dict(color=C["treatment"], width=2.5),
         hovertemplate="%{x|%d %b}<br>BGL: %{y:+.1f} cm<extra></extra>"))
-    fig2.add_trace(go.Scatter(x=fmc[M["date"]], y=fmc[M["water level reading"]], name=f"{farmer_c} (Control)",
+    fig2.add_trace(go.Scatter(x=fmc[M["date"]], y=fmc[M["bgl"]], name=f"{farmer_c} (Control)",
         mode="lines", line=dict(color=C["control"], width=2.5),
         hovertemplate="%{x|%d %b}<br>BGL: %{y:+.1f} cm<extra></extra>"))
     irt = fmt[fmt[M["irrigated"]] == True]
