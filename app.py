@@ -793,7 +793,7 @@ def tab_results_overview(master_f, summary_f, master, summary):
 
     # ── Row 1 charts (sidebar-filtered) ──────────────────────────────
     #cl, cr = st.columns([1.3, 1])
-    cl, cr = st.columns([1.3, 1])
+    cl, cr = st.columns([1, 1])
 
     #with cl:
         #st.subheader("Water Level Changes in the Field", help=H("das"))
