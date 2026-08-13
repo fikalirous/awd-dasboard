@@ -856,9 +856,9 @@ def tab_results_overview(master_f, summary_f, master, summary):
                 #legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5, font_size=9))
             #st.plotly_chart(fig_donut, use_container_width=True)
 
-if not master_f.empty:
+    if not master_f.empty:
 
-    def _phase_counts(df):
+      def _phase_counts(df):
         pc = df[M["phase"]].value_counts().reset_index()
         pc.columns = ["phase", "count"]
         pc["phase"] = pd.Categorical(
@@ -875,8 +875,6 @@ if not master_f.empty:
     pc_c = _phase_counts(mm[mm["Group"] == "Control"])
 
     cl, cr = st.columns([1, 1])
-
-  cl, cr = st.columns([1, 1])
 
 with cl:
     st.subheader("Hydrological Phase Distribution (Treatment)", help=H("phase"))
