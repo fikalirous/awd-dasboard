@@ -793,7 +793,7 @@ def tab_results_overview(master_f, summary_f, master, summary):
 
     # ── Row 1 charts (sidebar-filtered) ──────────────────────────────
     #cl, cr = st.columns([1.3, 1])
-    cl, cr = st.columns([1, 1])
+    cl, cr = st.columns([1.3, 1])
 
     #with cl:
         #st.subheader("Water Level Changes in the Field", help=H("das"))
@@ -821,7 +821,7 @@ def tab_results_overview(master_f, summary_f, master, summary):
                                #yaxis=dict(title="Water Level on Field (cm)"))
             #style_fig(fig, height=340)
             #st.plotly_chart(fig, use_container_width=True)
-    with c1:
+    with cl:
         st.subheader("Hydrological Phase Distribution (Treatment)", help=H("phase"))
         st.caption("Outer ring = Treatment (blue) · Inner ring = Control (red) · FL group then RL group")
         if not master_f.empty:
