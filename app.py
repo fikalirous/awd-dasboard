@@ -856,7 +856,7 @@ def tab_results_overview(master_f, summary_f, master, summary):
                 #legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5, font_size=9))
             #st.plotly_chart(fig_donut, use_container_width=True)
 
-   cl, cr = st.columns([1, 1])
+cl, cr = st.columns([1, 1])
 
 if not master_f.empty:
 
