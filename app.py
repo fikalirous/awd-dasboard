@@ -49,11 +49,11 @@ st.set_page_config(
 # ★ STEP 1 — PASTE YOUR GOOGLE SHEETS CSV LINKS HERE ★
 # ═══════════════════════════════════════════════════════════════════
 MASTER_ANALYSIS_URL = (
-    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=674566495&single=true&output=csv"
+    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=881993791&single=true&output=csv"
 )
 
 SUMMARY_URL = (
-    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=881993791&single=true&output=csv"
+    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=529906688&single=true&output=csv"
 )
 
 # ═══════════════════════════════════════════════════════════════════
