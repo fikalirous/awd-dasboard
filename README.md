@@ -385,52 +385,39 @@ command_area.geojson) next to `app.py` — see Step 2 below.
 
 ## COLUMN NAMES THIS DASHBOARD EXPECTS
 
-These match Apps Script v10. Master Analysis and the daily Analysis sheet are
-unchanged from v9 — only the Summary sheet was restructured. Both Irrigation
-columns are written as YES/NO text.
+These match Apps Script v17. The column lists live in the `M` (Master
+Analysis) and `S` (Summary) dictionaries near the top of `app.py` — if a
+header is renamed in the sheet, update the matching value there.
 
-### Master Analysis (21 columns)
-A: Farmer Name
-B: Village (Gram Panchayat)
-C: Type
-D: Method of Cultivation
-E: Land Area (acres)
-F: Date of Sowing
-G: CRP Incharge
-H: Date
-I: Monitoring Day
-J: PP Reading (cm)
-K: Duplicate? (count)
-L: Zero Replaced?
-M: In ref to surface
-N: FL / RL
-O: Phase
-P: Change in WL (cm)
-Q: Event
-R: Irrig. Depth (cm)
-S: Irrigation Reported (YES/NO)
-T: Irrigation Calculated (YES/NO)
-U: Days Monitored
+### Master Analysis (27 columns)
+Farmer Name, Village (Gram Panchayat), Type, Method of Cultivation, Land Area
+(acres), Date of Sowing, CRP Incharge, Date, **Days Since Sowing**, PP Reading
+(cm), Duplicate? (count), Zero Replaced?, In ref to surface, FL / RL, Phase,
+Change in WL (cm), Event, Irrig. Depth (cm), **Cumulative Irrig. Depth (cm)**,
+**Data Type**, Irrigation Reported (YES/NO), Irrigation Calculated (YES/NO),
+Days Monitored, **Daily Rainfall (mm)**, **Cumulative Rainfall (mm)**,
+**Remarks and Comments**, **Images of the Field**.
 
-The dashboard computes its own "Days After Sowing" (Date − Date of Sowing)
-for the Days-After-Sowing trend chart — it doesn't rely on column I, which
-is just a sequential reading count, not a calendar-based day count.
+`Data Type` is either "Actual" or "Counterfactual". Counterfactual rows are
+modelled marker rows (where the water level would have been without an
+irrigation); the dashboard ignores them and uses Actual rows only.
 
-### Summary (key columns used, of 43 total)
-Name of the Village (Gram Panchayat), Name of the Farmer, Type of Monitoring
-Site, Size of Monitoring Field (acres), Location of Monitoring Sites - GPS,
-No. Irrigations (a) Reported, No. Irrigations (b) Calculated,
-No. of Days Water Level Stayed Above/Below Surface,
-No. of Dry Days (Water Level >=25cm Below),
-No. of Field Drying Events (>=3 Consecutive Days Below Surface),
-Avg Drying Days Phase 1-4 (DAS), RL-Flood/Inter/Soil (mm), FL-Flood/Inter/Soil (mm),
-Total Irrigated Water Depth (mm), Total Volumetric Water Irrigated (m3),
-Total Water Recharged (mm/m3), Actual Water Savings (%), Actual Water Savings (mm),
-Actual Vol. Water Saving (m3), Total Rainfall During Monitoring Period (mm)
+### Summary (69 columns)
+One row per farmer: identity & site details (village, farmer, type, field
+size, GPS, canal position, soil, method…), dates and monitoring coverage,
+irrigation counts (reported / calculated), water-level behaviour (days above /
+below surface, drying events, drying duration by crop stage), the rising /
+falling limb depths in mm, total irrigated water depth (mm / m³), water
+recharged, Actual Water Savings (% / mm / m³), yield, income, crop & economic
+water productivity (CWP / EWP), rainfall and remarks.
 
-Note: "Actual Water Savings (%)" is a Sheets custom text format and is
-exported as a literal string like "-40.69%" — the dashboard strips the "%"
-before parsing it as a number.
+Notes:
+- "Actual Water Savings (%)" and "Error Margin" are exported as text with a
+  "%" suffix (e.g. "-40.69%") — the dashboard strips the "%" before parsing.
+- The map pins each farmer using the Summary sheet's own GPS column
+  ("lat, long"); the bundled `geo/farmer_points.geojson` is only a fallback.
+- The "No. of Dry Days (>=25cm)" column no longer exists in the Summary sheet.
+
 
 ---
 

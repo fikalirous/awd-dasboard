@@ -49,11 +49,11 @@ st.set_page_config(
 # ★ STEP 1 — PASTE YOUR GOOGLE SHEETS CSV LINKS HERE ★
 # ═══════════════════════════════════════════════════════════════════
 MASTER_ANALYSIS_URL = (
-    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=881993791&single=true&output=csv"
+    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vQaWVUo90mF4Tw0iWwanxzTsk0y4sly3UKVfkch9azX0dM9jg1EYKhV5ABLW3Q7mN0E95o3snn9aZOS/pub?gid=931246469&single=true&output=csv"
 )
 
 SUMMARY_URL = (
-    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vRK8CYPjHB6tBB9H5HFxJ_rIy6Exj5CpH8q7elgAN7DTXlehdNYX1034etUT1H7Ip6rdOFrdX_2RnJw/pub?gid=529906688&single=true&output=csv"
+    r"https://docs.google.com/spreadsheets/d/e/2PACX-1vQaWVUo90mF4Tw0iWwanxzTsk0y4sly3UKVfkch9azX0dM9jg1EYKhV5ABLW3Q7mN0E95o3snn9aZOS/pub?gid=594619847&single=true&output=csv"
 )
 
 # ═══════════════════════════════════════════════════════════════════
@@ -124,10 +124,13 @@ def to_group(series):
 
 
 # Derived columns — not in the source sheet, calculated on load.
-DAS_COL = "Days After Sowing (derived)"  # Date − Date of Sowing, computed ourselves
+# Apps Script v17 writes "Days Since Sowing" (Date − Date of Sowing) itself;
+# load_master() only derives it as a fallback if the column is ever missing.
+DAS_COL = "Days Since Sowing"
 
 # ═══════════════════════════════════════════════════════════════════
-# COLUMN NAMES — Master Analysis (21 columns) — Apps Script v9
+# COLUMN NAMES — Master Analysis (27 columns) — Apps Script v17
+# (also holds "Counterfactual" marker rows — load_master keeps Actual only)
 # ═══════════════════════════════════════════════════════════════════
 M = {
     "farmer"         : "Farmer Name",
@@ -138,7 +141,6 @@ M = {
     "sowing_date"    : "Date of Sowing",
     "crp"            : "CRP Incharge",
     "date"           : "Date",
-    "monitoring_day" : "Monitoring Day",
     "das"            : DAS_COL,
     "pp_reading"     : "PP Reading (cm)",
     "duplicate"      : "Duplicate? (count)",
@@ -152,13 +154,19 @@ M = {
     "irrigated"      : "Irrigation Reported",
     "irrig_calc"     : "Irrigation Calculated",
     "days_mon"       : "Days Monitored",
+    "cum_irrig"      : "Cumulative Irrig. Depth (cm)",
+    "data_type"      : "Data Type",
+    "rain"           : "Daily Rainfall (mm)",
+    "cum_rain"       : "Cumulative Rainfall (mm)",
+    "remarks"        : "Remarks and Comments",
+    "images"         : "Images of the Field",
 }
 
 # ═══════════════════════════════════════════════════════════════════
-# COLUMN NAMES — Summary (49 columns) — Apps Script v9
+# COLUMN NAMES — Summary (69 columns) — Apps Script v17
 # ═══════════════════════════════════════════════════════════════════
 S = {
-    "serial"            : " ",  # header is a blank cell in the sheet ("Sl No" is the intent)
+    "serial"            : "Sl No",
     "village"           : "Name of the Village (Gram Panchayat)",
     "farmer"            : "Name of the Farmer",
     "type"              : "Type of Monitoring Site",
@@ -177,22 +185,22 @@ S = {
     "error_margin"      : "Error Margin of Data Collection",
     "days_above"        : "No. of Days Water Level Stayed Above Surface",
     "days_below"        : "No. of Days Water Level Stayed Below Surface",
-    "max_wl_events"     : "Days Water Level >10cm Above Surface (Deep Flood)",
-    "min_wl_events"     : "Days Water Level >10cm Below Surface (Deep Dry)",
-    "dry_days"          : "No. of Dry Days (Water Level >=25cm Below)",
-    "drying_events"     : "No. of Field Drying Events (>=3 Consecutive Days Below Surface)",
+    "max_wl_events"     : "No of days Water Level is more than 10cm above Surface (High Wet)",
+    "min_wl_events"     : "No of days Water Level is less than 10cm Below Surface (Very Dry)",
+    "drying_events"     : "No. of Field Drying Events (3 or more Consecutive Days Below Surface)",
     "max_dry_duration"  : "Max Dry Period Duration (days)",
+    "last_drying"       : "Last drying before Harvest",
     "avg_drying_overall": "Avg Drying Days (Overall)",
     "avg_drying_p1"     : "Avg Drying Days Phase 1 (0-30 DAS)",
     "avg_drying_p2"     : "Avg Drying Days Phase 2 (30-60 DAS)",
     "avg_drying_p3"     : "Avg Drying Days Phase 3 (60-90 DAS)",
     "avg_drying_p4"     : "Avg Drying Days Phase 4 (90+ DAS)",
-    "rl_flood_mm"       : "RL-Flood (mm)",
-    "rl_inter_mm"       : "RL-Inter (mm)",
-    "rl_soil_mm"        : "RL-Soil (mm)",
-    "fl_flood_mm"       : "FL-Flood (mm)",
-    "fl_inter_mm"       : "FL-Inter (mm)",
-    "fl_soil_mm"        : "FL-Soil (mm)",
+    "rl_flood_mm"       : "Irrigation depth in rising limb - Flood (mm)",
+    "rl_inter_mm"       : "Irrigation depth in rising limb - Inter (mm)",
+    "rl_soil_mm"        : "Irrigation depth in rising limb - Soil (mm)",
+    "fl_flood_mm"       : "Water level drop in falling limb - Flood (mm)",
+    "fl_inter_mm"       : "Water level drop in falling limb - Inter (mm)",
+    "fl_soil_mm"        : "Water level drop in falling limb - Soil (mm)",
     "total_water_mm"    : "Total Irrigated Water Depth (mm)",
     "total_water_m3"    : "Total Volumetric Water Irrigated (m3)",
     "total_recharged_mm": "Total Water Recharged (mm)",
@@ -201,10 +209,18 @@ S = {
     "savings_mm"        : "Actual Water Savings (mm)",
     "savings_m3"        : "Actual Vol. Water Saving (m3)",
     "rainfall"          : "Total Rainfall During Monitoring Period (mm)",
-    # These columns were removed outright in the v10 rewrite (not renamed) —
+    "yield_kg"          : "Yield (kg)",
+    "price_per_kg"      : "Price per kg (Rs)",
+    "income"            : "Income (Rs)",
+    "cwp"               : "Crop water productivity (CWP) Kg/m3",
+    "ewp"               : "Economic water productivity (EWP) Rs/m3",
+    "days_sow_to_mon"   : "No. of Days between Sowing and Monitoring",
+    "days_growing"      : "No. of Days of Growing",
+    # These columns were removed outright (v10 / v17 rewrites, not renamed) —
     # every place that reads them already falls back to "—" when absent, so
     # these mappings are kept only so those fallbacks stay well-defined.
     "avg_gopal_cm"      : "Avg Irrig. Depth - Gopal (cm)",
+    "dry_days"          : "No. of Dry Days (Water Level >=25cm Below)",
     "avg_between_dry"   : "Avg Wet Days Between Dry Cycles",
     "min_between_dry"   : "Min Days Between Dry Periods",
     "max_between_dry"   : "Max Days Between Dry Periods",
@@ -233,7 +249,20 @@ TIPS = {
     # Daily readings
     "date"        : "The calendar date of this water-level reading.",
     "das"         : "Days After Sowing — how many days have passed since the crop was sown (Date − Date of Sowing).",
-    "monitoring_day": "The sequence number of this reading for the farmer (1st reading, 2nd reading, …). Not the same as Days After Sowing — this just counts monitored days in order, regardless of any gaps.",
+    "cum_irrig"   : "Running total of irrigation depth (cm) added so far this season for this farmer.",
+    "data_type"   : "\"Actual\" rows are real readings. \"Counterfactual\" rows are modelled marker rows showing where the water level would have been without an irrigation — the dashboard uses Actual rows only.",
+    "rain"        : "Rainfall recorded on this date, in millimetres.",
+    "cum_rain"    : "Rainfall accumulated from the start of monitoring up to this date, in millimetres.",
+    "remarks"     : "Enumerator remarks and comments recorded on this date.",
+    "images"      : "Link to the photo of the field / Pani pipe taken on this date.",
+    "last_drying" : "Number of days at the end of the season (after the last wet reading) when the field was left to dry before harvest. These days are excluded from the drying-event statistics.",
+    "yield_kg"    : "Paddy yield reported by the farmer, in kilograms.",
+    "price_per_kg": "Selling price per kilogram, in rupees.",
+    "income"      : "Income from the crop, in rupees.",
+    "cwp"         : "Crop Water Productivity — kilograms of yield produced per cubic metre of irrigation water (Yield ÷ Total Volumetric Water Irrigated).",
+    "ewp"         : "Economic Water Productivity — rupees of income earned per cubic metre of irrigation water (Income ÷ Total Volumetric Water Irrigated).",
+    "days_sow_to_mon": "Days between sowing and the start of continuous monitoring.",
+    "days_growing": "Number of days the crop was growing (sowing to harvest).",
     "pp_reading"  : "Pani Pipe reading in centimetres — the distance from the top of the pipe down to the water surface inside it. Lower = more flooded, higher = drier. Formula: BGL = 15 − PP Reading.",
     "duplicate"   : "Flags dates where more than one raw reading was submitted for this farmer and the readings were averaged together.",
     "zero_repl"   : "Flags a reading of 0 (physically impossible) that was automatically replaced with the previous day's value.",
@@ -254,7 +283,7 @@ TIPS = {
     # Water level status
     "days_above"  : "Number of days the field was flooded — water at or above the soil surface (BGL ≥ 0). AWD aims to reduce these days.",
     "days_below"  : "Number of days the field was drying — water below the soil surface (BGL < 0). AWD aims to safely increase these days.",
-    "dry_days"    : "Number of days the field reached a deep-dry condition (PP reading ≥ 25cm, i.e. BGL ≤ −10cm) — a potential crop-stress threshold.",
+    "dry_days"    : "Number of days the field reached a deep-dry condition (PP reading ≥ 25cm). No longer provided by the current sheet — shown as \"—\".",
     # Drying events
     "drying_events"   : "Number of distinct AWD drying cycles — periods where the water stayed continuously below the soil surface for 3 or more consecutive days.",
     "avg_between_dry" : "Average number of wet days between consecutive drying events. Shorter gaps mean faster AWD cycling.",
@@ -318,11 +347,16 @@ def load_master(url):
         r = requests.get(url, timeout=20)
         r.raise_for_status()
         df = pd.read_csv(StringIO(r.text))
+        # v17 interleaves modelled "Counterfactual" marker rows between actual
+        # readings. Every chart/KPI here is about what really happened, so drop them.
+        if M["data_type"] in df.columns:
+            df = df[df[M["data_type"]].astype(str).str.strip() != "Counterfactual"].copy()
         for col in [M["date"], M["sowing_date"]]:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], dayfirst=True, errors="coerce")
-        num_cols = [M["land_area"], M["monitoring_day"], M["pp_reading"], M["bgl"],
-                    M["change_wl"], M["gopal_cm"], M["days_mon"]]
+        num_cols = [M["land_area"], M["das"], M["pp_reading"], M["bgl"],
+                    M["change_wl"], M["gopal_cm"], M["days_mon"],
+                    M["cum_irrig"], M["rain"], M["cum_rain"]]
         for col in num_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -334,9 +368,8 @@ def load_master(url):
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
         df = df.sort_values([M["farmer"], M["date"]]).reset_index(drop=True)
-        # Derived: real Days After Sowing (the sheet's own "Monitoring Day" column
-        # is just a sequential reading count, not this) — used for the DAS-aligned trend.
-        if M["date"] in df.columns and M["sowing_date"] in df.columns:
+        # Days Since Sowing now comes from the sheet; derive it only if absent.
+        if DAS_COL not in df.columns and M["date"] in df.columns and M["sowing_date"] in df.columns:
             df[DAS_COL] = (df[M["date"]] - df[M["sowing_date"]]).dt.days
         return df
     except Exception as e:
@@ -358,15 +391,16 @@ def load_summary(url):
         num_s = [v for k, v in S.items()
                  if k not in ["serial", "farmer", "village", "type", "method",
                               "sowing_date", "cm_start", "cm_end", "harvest_date", "gps",
-                              "savings_pct"]]
+                              "savings_pct", "error_margin"]]
         for col in num_s:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
-        # Actual Water Savings (%) is a Sheets custom text format ('0.00"%"'),
-        # so it's exported as a literal string like "-40.69%" — strip the % first.
-        if S["savings_pct"] in df.columns:
-            df[S["savings_pct"]] = pd.to_numeric(
-                df[S["savings_pct"]].astype(str).str.rstrip("%").str.strip(), errors="coerce")
+        # Actual Water Savings (%) and Error Margin are exported as literal text
+        # with a "%" suffix (e.g. "-40.69%", "0.0%") — strip it before parsing.
+        for key in ["savings_pct", "error_margin"]:
+            if S[key] in df.columns:
+                df[S[key]] = pd.to_numeric(
+                    df[S[key]].astype(str).str.rstrip("%").str.strip(), errors="coerce")
         for col in [S["farmer"], S["village"], S["type"], S["gps"]]:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
@@ -412,42 +446,70 @@ def render_farmer_map(summary):
                 "land_area": row.get(S["land_area"]),
                 "irrig_mm": row.get(S["total_water_mm"]),
                 "savings_mm": row.get(S["savings_mm"]),
+                "gps": row.get(S["gps"]),
             }))
 
-    # Index geo points for lookup: exact name, name with word order/punctuation
-    # normalised away, and grouped by village for a same-village fuzzy fallback
-    # (Backend Data and the monitoring-sites shapefile don't always spell/order
-    # a farmer's name identically — e.g. "G.Manikandan" vs "Manikandan.G").
+    def _parse_gps(val):
+        """'10.116542, 77.558435' -> (lat, lon), or None if missing/invalid."""
+        try:
+            lat, lon = [float(x) for x in str(val).split(",")]
+        except (ValueError, TypeError):
+            return None
+        return (lat, lon) if 5 < lat < 40 and 60 < lon < 100 else None
+
+    # Primary source: the GPS column on the Summary sheet itself (always in sync
+    # with the farmer list). Fallback for any farmer without usable GPS: look the
+    # name up in the bundled shapefile points — exact, then word-order/punctuation
+    # normalised, then a same-village fuzzy match — never reusing a point that
+    # already belongs to another farmer (that would stack two farmers on one pin).
     def _norm(n):
         return " ".join(sorted(str(n).replace(".", " ").split())).lower()
 
-    geo_by_exact, geo_by_norm, geo_by_village = {}, {}, {}
-    for feat in pts_geo["features"]:
-        raw = str(feat["properties"].get("farmer", "")).strip()
-        if not raw:
-            continue
-        village_key = str(feat["properties"].get("village", "")).strip().lower()
-        geo_by_exact.setdefault(raw.lower(), feat)
-        geo_by_norm.setdefault(_norm(raw), feat)
-        geo_by_village.setdefault(village_key, []).append((_norm(raw), feat))
-
-    plotted = []
+    located, pending = {}, []
     for name, info in farmers:
-        feat = geo_by_exact.get(name.lower()) or geo_by_norm.get(_norm(name))
-        if feat is None:
+        pos = _parse_gps(info.get("gps"))
+        if pos:
+            located[name] = pos
+        else:
+            pending.append((name, info))
+
+    if pending:
+        taken = set()
+        geo_by_exact, geo_by_norm, geo_by_village = {}, {}, {}
+        for i, feat in enumerate(pts_geo["features"]):
+            raw = str(feat["properties"].get("farmer", "")).strip()
+            if not raw:
+                continue
+            village_key = str(feat["properties"].get("village", "")).strip().lower()
+            geo_by_exact.setdefault(raw.lower(), i)
+            geo_by_norm.setdefault(_norm(raw), i)
+            geo_by_village.setdefault(village_key, []).append((_norm(raw), i))
+
+        unresolved = []
+        for name, info in pending:
+            i = geo_by_exact.get(name.lower(), geo_by_norm.get(_norm(name)))
+            if i is not None and i not in taken:
+                taken.add(i)
+                lon, lat = pts_geo["features"][i]["geometry"]["coordinates"]
+                located[name] = (lat, lon)
+            else:
+                unresolved.append((name, info))
+        for name, info in unresolved:
             village_key = str(info.get("village", "")).strip().lower()
-            name_norm = _norm(name)
             best, best_ratio = None, 0.0
-            for cand_norm, cand_feat in geo_by_village.get(village_key, []):
-                ratio = difflib.SequenceMatcher(None, name_norm, cand_norm).ratio()
+            for cand_norm, i in geo_by_village.get(village_key, []):
+                if i in taken:
+                    continue
+                ratio = difflib.SequenceMatcher(None, _norm(name), cand_norm).ratio()
                 if ratio > best_ratio:
-                    best_ratio, best = ratio, cand_feat
+                    best_ratio, best = ratio, i
             if best is not None and best_ratio >= 0.8:
-                feat = best
-        if feat is None:
-            continue
-        lon, lat = feat["geometry"]["coordinates"]
-        plotted.append((name, lat, lon, info))
+                taken.add(best)
+                lon, lat = pts_geo["features"][best]["geometry"]["coordinates"]
+                located[name] = (lat, lon)
+
+    plotted = [(name, located[name][0], located[name][1], info)
+               for name, info in farmers if name in located]
 
     if not plotted:
         st.info("None of the currently filtered farmers have a mapped location yet.")
@@ -1147,7 +1209,7 @@ def tab_compare_farmers(master, summary):
         ("Irrigations (Calculated)", "irrigations_b", "{:.0f}"),
         ("Days Above Surface", "days_above", "{:.0f}"),
         ("Days Below Surface", "days_below", "{:.0f}"),
-        ("Dry Days (>=25cm)", "dry_days", "{:.0f}"),
+        ("Very Dry Days (>10cm below surface)", "min_wl_events", "{:.0f}"),
         ("Max Dry Period Duration (days)", "max_dry_duration", "{:.0f}"),
         ("Total Water Added (mm)", "total_water_mm", "{:,.0f}"),
         ("Total Water Recharged (mm)", "total_recharged_mm", "{:,.0f}"),
@@ -1409,8 +1471,8 @@ def tab_individual_farmer(master, summary):
     with st.expander("📋 Raw daily data"):
         show = [c for c in [M["date"], M["das"], M["pp_reading"], M["bgl"],
                 M["fl_rl"], M["phase"], M["change_wl"], M["event"],
-                M["gopal_cm"], M["irrigated"], M["irrig_calc"],
-                M["zero_repl"]] if c in fm.columns]
+                M["gopal_cm"], M["cum_irrig"], M["irrigated"], M["irrig_calc"],
+                M["rain"], M["cum_rain"], M["zero_repl"], M["remarks"]] if c in fm.columns]
         col_config = {
             M["date"]: st.column_config.DateColumn(format="DD MMM YYYY", help=H("date")),
             M["das"]: st.column_config.Column("Days After Sowing", help=H("das")),
@@ -1421,6 +1483,10 @@ def tab_individual_farmer(master, summary):
             M["change_wl"]: st.column_config.Column(help=H("change_wl")),
             M["event"]: st.column_config.Column(help=H("event")),
             M["gopal_cm"]: st.column_config.Column(help=H("gopal_cm")),
+            M["cum_irrig"]: st.column_config.Column(help=H("cum_irrig")),
+            M["rain"]: st.column_config.Column(help=H("rain")),
+            M["cum_rain"]: st.column_config.Column(help=H("cum_rain")),
+            M["remarks"]: st.column_config.Column(help=H("remarks")),
             M["irrigated"]: st.column_config.CheckboxColumn("Irrigated (Reported)?", help=H("irrigated")),
             M["irrig_calc"]: st.column_config.CheckboxColumn("Irrigated (Calculated)?", help=H("irrig_calc")),
             M["zero_repl"]: st.column_config.Column(help=H("zero_repl")),
