@@ -517,12 +517,18 @@ def render_farmer_map(summary):
 
     lats = [p[1] for p in plotted]
     lons = [p[2] for p in plotted]
+    # Two key-free basemaps, switchable from the layer control. The control lists
+    # only meaningful, human-named layers (not the raw tile-provider name).
     m = folium.Map(location=[sum(lats) / len(lats), sum(lons) / len(lons)],
-                    zoom_start=12, tiles="CartoDB positron")
+                    zoom_start=12, tiles=None)
+    folium.TileLayer("OpenStreetMap", name="Street map", control=True).add_to(m)
+    folium.TileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Tiles &copy; Esri", name="Satellite", control=True, show=False).add_to(m)
 
     if gp_geo:
         folium.GeoJson(
-            gp_geo, name="Village (GP) Boundaries",
+            gp_geo, name="Village (GP) boundaries",
             style_function=lambda f: {"fillColor": C["accent"], "color": C["accent"],
                                        "weight": 2, "fillOpacity": 0.04},
             tooltip=folium.GeoJsonTooltip(fields=["village"], aliases=["Village:"]),
@@ -532,7 +538,7 @@ def render_farmer_map(summary):
         cmd_colors = {"Command": C["treatment"], "Non command": C["control"],
                       "Non Command area (Tail end)": "#8B4513"}
         folium.GeoJson(
-            cmd_geo, name="Command Area Classification",
+            cmd_geo, name="Command area classification",
             style_function=lambda f: {
                 "fillColor": cmd_colors.get(f["properties"].get("classification"), "#999"),
                 "color": cmd_colors.get(f["properties"].get("classification"), "#999"),
@@ -540,6 +546,38 @@ def render_farmer_map(summary):
             tooltip=folium.GeoJsonTooltip(fields=["classification", "detail"],
                                            aliases=["Classification:", "Detail:"]),
         ).add_to(m)
+
+    def _label_html(text, size=11, color="#1B4F72"):
+        return (f"<div style='font-size:{size}px;font-weight:700;color:{color};white-space:nowrap;"
+                f"transform:translate(-50%,-50%);text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff;'>"
+                f"{text}</div>")
+
+    # Always-visible village names at the centre of each boundary polygon
+    if gp_geo:
+        village_labels = folium.FeatureGroup(name="Village names", show=True)
+        for feat in gp_geo["features"]:
+            geom = feat["geometry"]
+            rings = ([geom["coordinates"][0]] if geom["type"] == "Polygon"
+                     else [poly[0] for poly in geom["coordinates"]])
+            pts = [pt for ring in rings for pt in ring]
+            if not pts:
+                continue
+            clon = (min(p[0] for p in pts) + max(p[0] for p in pts)) / 2
+            clat = (min(p[1] for p in pts) + max(p[1] for p in pts)) / 2
+            vname = str(feat["properties"].get("village", "")).replace("_TP", "").replace("_", " ").title()
+            # match the spelling used in the data sheets
+            vname = {"Vadugapatti": "Vadugapatty", "A Vadipatti": "A.Vadipatty"}.get(vname, vname)
+            folium.Marker([clat, clon], icon=folium.DivIcon(
+                html=_label_html(vname, 12), icon_size=(0, 0))).add_to(village_labels)
+        village_labels.add_to(m)
+
+    # Farmer pins as one toggleable layer per group, with counts in the label
+    group_layers = {}
+    for grp in ["Treatment", "Control"]:
+        n = sum(1 for p in plotted if p[3]["type"] == grp)
+        group_layers[grp] = folium.FeatureGroup(name=f"{grp} farmers ({n})", show=True)
+    other_layer = folium.FeatureGroup(name="Other farmers", show=True)
+    name_layer = folium.FeatureGroup(name="Farmer names", show=False)
 
     for name, lat, lon, info in plotted:
         grp = info["type"]
@@ -558,12 +596,21 @@ def render_farmer_map(summary):
             location=[lat, lon], radius=6, color="white", weight=1,
             fill=True, fill_color=color, fill_opacity=0.9,
             popup=folium.Popup(popup_html, max_width=220), tooltip=name,
-        ).add_to(m)
+        ).add_to(group_layers.get(grp, other_layer))
+        folium.Marker([lat, lon], icon=folium.DivIcon(
+            html=_label_html(name, 9, color).replace("translate(-50%,-50%)", "translate(-50%,8px)"),
+            icon_size=(0, 0))).add_to(name_layer)
+
+    for layer in list(group_layers.values()) + [other_layer, name_layer]:
+        if layer is other_layer and not any(p[3]["type"] not in group_layers for p in plotted):
+            continue   # no farmers of an unrecognised type — keep it out of the control
+        layer.add_to(m)
 
     folium.LayerControl(collapsed=False).add_to(m)
     st_folium(m, use_container_width=True, height=460, returned_objects=[])
     st.caption(f"📍 {len(plotted)} of {len(farmers)} currently filtered farmers have a "
-               f"mapped location. 🔵 Treatment · 🟠 Control")
+               f"mapped location. 🔵 Treatment · 🟠 Control — use the layer control (top-right) to switch basemap, "
+               "toggle farmer groups, village names and farmer names.")
 
 
 # ═══════════════════════════════════════════════════════════════════
