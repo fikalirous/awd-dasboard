@@ -40,7 +40,7 @@ GEO_DIR = Path(__file__).parent / "geo"
 # ═══════════════════════════════════════════════════════════════════
 st.set_page_config(
     page_title="AWD Farmer Progress Monitor",
-    page_icon="🌾",
+    page_icon=" ",
     layout="wide",
     initial_sidebar_state="expanded",
 )
