@@ -1176,9 +1176,7 @@ def tab_results_overview(master_f, summary_f, master, summary):
     # ── Subsection 3 — scoreboards: Treatment (left) | Control (right) ─
     # Always the full n=100 cohort (not the sidebar filters).
     st.markdown("### Results — Treatment vs Control")
-    st.caption("Group figures across the full cohort. Cards show the average per farmer, "
-               "or the group total for volumes (m³) and the farmer counts. Savings are measured "
-               "against the 1100 mm TNAU baseline — "
+    st.caption("Savings are measured against the 1100 mm TNAU baseline — "
                "[TNAU standard](http://www.agritech.tnau.ac.in/agriculture/agri_cropproduction_cereals_rice_tranpudlow_mainfield_water_mgmt.html).")
     hl, hr = st.columns(2)
     hl.markdown(f"<div style='border-bottom:3px solid {C['treatment']};font-weight:700;"
