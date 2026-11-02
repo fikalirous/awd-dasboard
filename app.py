@@ -1140,8 +1140,7 @@ def tab_results_overview(master_f, summary_f, master, summary):
                 "resulting data has been analyzed to determine the differential in water "
                 "consumption between the two groups.\n\n"
                 "For a detailed understanding of the data collection process, please refer "
-                "to the <a href=\"#\">Playbook for Measuring Water Level Using Pani [playbook](https://docs.google.com/document/d/1tYzi1q7qTdXfrmkkpZsCLf_xfqBKXx_DOKIcrXsM4jA/edit?tab=t.8agzb0o7q1dh) "
-                "Pipes</a>."
+                "to the [playbook](https://docs.google.com/document/d/1tYzi1q7qTdXfrmkkpZsCLf_xfqBKXx_DOKIcrXsM4jA/edit?tab=t.8agzb0o7q1dh) "
             , unsafe_allow_html=True)
         with cimg:
             img_path = Path(__file__).parent / "assets" / "awd_conceptual_diagram.png"
