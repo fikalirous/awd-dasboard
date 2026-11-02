@@ -1572,7 +1572,7 @@ def tab_compare_farmers(master, summary):
 
     with st.expander("Key Performance Indicators — Control vs Treatment", expanded=True):
         st.caption(f"{farmer_c} (Control) compared with {farmer_t} (Treatment). "
-                   "Depths are each farmer's Total Irrigated Water Depth (mm); areas are Size of Monitoring Field (acres).")
+                   "")
         k1, k2, k3, k4 = st.columns(4)
         metric_card(k1, "Water Savings (mm)", fmt_or_dash(diff_mm, "{:+,.0f} mm"),
                     "Control − Treatment", "savings_mm", C["accent"])
@@ -1927,10 +1927,10 @@ def main():
     master_f, summary_f = render_sidebar(master, summary)
 
     t1, t2, t3, t4 = st.tabs([
-        "📊 Results Overview",
-        "👤 Individual Farmer Results",
-        "⚖️ Compare Farmers",
-        "🔍 Get Data",
+        " Results Overview",
+        " Individual Farmer Results",
+        " Compare Farmers",
+        " Get Data",
     ])
     with t1: tab_results_overview(master_f, summary_f, master, summary)
     with t2: tab_individual_farmer(master_f, summary_f)
