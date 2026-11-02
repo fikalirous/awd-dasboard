@@ -298,61 +298,39 @@ hover over it for a plain-English definition of that variable, taken from
 - Field type selector — All / Treatment / Control
 - Refresh button — force reload data from Google Sheets
 
-### Tab 1 — Programme Overview
-- Interactive map: every currently filtered farmer pinned by GPS location
-  (blue = Treatment, orange = Control), with Gram Panchayat boundary and
-  command-area layers you can toggle on/off
-- KPI metric cards (farmers, avg drying events — **Treatment farmers only**,
-  safe zone %, BGL comparison, irrigations Reported vs Calculated)
-- Water level on field vs. Days After Sowing: Treatment vs Control, aligned
-  by crop age rather than calendar date so farmers with different sowing
-  dates compare on the same growth-stage axis
-- Phase distribution donut chart — FL phases grouped together, then RL phases
-- Village comparison bar charts (BGL + drying events)
-- Drying duration by crop growth stage (0-30, 30-60, 60-90, 90+ DAS)
+Every section on every tab sits in a collapsible panel (click its title to
+fold it away).
 
-The map needs a `geo/` folder (farmer_points.geojson, gp_boundary.geojson,
-command_area.geojson) next to `app.py` — see Step 2 below.
+### Tab 1 — Results Overview (always the full 100-farmer cohort)
+- About this evaluation: description and the AWD conceptual diagram
+- Farmer locations & village boundaries map, beside the farmer-distribution
+  table (Treatment / Control per village)
+- Treatment (left) vs Control (right) scoreboards: Key Performance Index,
+  Productivity, Water Usage (cards) and Irrigation (table). Cards show the
+  average per farmer, or the group total for volumes (m³) and farmer counts
+- Collapsed extras: hydrological phase donuts and the village bar charts
+  (these two follow the sidebar filters)
 
-### Tab 2 — Treatment vs Control (Performance Comparison)
-- Village dropdown to scope the comparison
-- Programme-wide weekly water level trend for all Treatment vs all Control
-  farmers in the selected villages
-- Farmer-level drill-down: pick one Treatment farmer and one Control farmer
-  and overlay their daily water-level trend directly
-- Season metrics shown side by side for the two selected farmers (drying
-  events, irrigations reported/calculated, water added, Gopal depth, etc.)
-- A "Performance Index" radar chart scaling each metric 0–100 so the two
-  farmers can be compared on one chart regardless of units
+### Tab 2 — Individual Farmer Results
+- Village → Type → Farmer dropdowns
+- Season summary (village, type, land, days monitored, dry events), then
+  Key Performance Index, Productivity, Information (table), Water Usage and
+  Irrigation (table) for that farmer
+- Daily water level reading chart with irrigation markers and phase bars
+- Build-your-own chart: choose chart type (line, bar, stacked bar, box plot,
+  pie), X / Y axis, colour, aggregation and filters; opens on a default graph
 
-### Tab 3 — Farmer Summary
-- Searchable, sortable table of all farmers with key season metrics,
-  including both Irrigations Reported and Irrigations Calculated
-- Filter by village and type
-- Top 15 farmers by irrigation depth, in mm (bar chart)
-- Bottom 15 farmers by irrigation depth, in mm (bar chart)
-- CSV download button
+### Tab 3 — Compare Farmers (full cohort)
+- Pick a Treatment farmer; the Control farmer defaults to the Summary's
+  "Default Control Pairing" and can be changed freely
+- Water level trend for the pair, and a build-your-own chart (daily readings
+  or season totals)
+- Pair KPIs (Control − Treatment): water savings mm and %, actual and
+  potential volumetric savings (m³)
+- Treatment farmer vs Control farmer side by side: KPI, Productivity, Water
+  Usage, Irrigation and Remarks; plus a collapsed radar "Performance Index"
 
-### Tab 4 — Farmer Deep Dive
-- Select village → type → individual farmer
-- Season summary metrics pulled from Summary sheet, including Irrigations
-  Reported and Irrigations Calculated side by side
-- Full PP reading timeline with:
-  - Safe zone green band
-  - Irrigation markers — ▲ reported, ◇ calculated (water level rose >2cm)
-  - Phase colour bars below the timeline (FL group, then RL group)
-- BGL area chart (In ref to surface)
-- Phase distribution donut
-- Raw daily data table (expandable), including the derived
-  "Irrigation Calculated" column
-
-### Tab 5 — Water & Irrigation
-- Programme-level totals: water added, recharged, TNAU baseline, savings %
-- Total water added by village (Treatment vs Control)
-- Gopal depth distribution histogram
-- Irrigations Reported vs Calculated by village (bar chart)
-
-### Tab 6 — Data Explorer
+### Tab 4 — Get Data
 - Full Master Analysis flat table with search and filters
 - Full Summary table with search
 - CSV download for both

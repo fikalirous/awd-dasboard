@@ -216,6 +216,20 @@ S = {
     "ewp"               : "Economic water productivity (EWP) Rs/m3",
     "days_sow_to_mon"   : "No. of Days between Sowing and Monitoring",
     "days_growing"      : "No. of Days of Growing",
+    "crp"               : "Monitoring CRP Incharge",
+    "total_land"        : "Total Land Area (acres)",
+    "project_area"      : "Project Area",
+    "command_area"      : "Command Area / Non Command Area",
+    "canal_pos"         : "Broad Canal Positioning",
+    "subcanal_pos"      : "Positioning within Sub Canal System",
+    "soil"              : "Soil Type",
+    "irrig_mode"        : "Mode of Irrigation",
+    "seed"              : "Seed Variety",
+    "cm_backend"        : "Continuous Monitoring Start Date (Backend)",
+    "default_pair"      : "Default Control Pairing",
+    "confidence"        : "AWD Confidence (Good/Average/Bad)",
+    "remark1"           : "Remark 1 - Observation at Start",
+    "remark2"           : "Remark 2 - Observation after Completion",
     # These columns were removed outright (v10 / v17 rewrites, not renamed) —
     # every place that reads them already falls back to "—" when absent, so
     # these mappings are kept only so those fallbacks stay well-defined.
@@ -263,7 +277,7 @@ TIPS = {
     "ewp"         : "Economic Water Productivity — rupees of income earned per cubic metre of irrigation water (Income ÷ Total Volumetric Water Irrigated).",
     "days_sow_to_mon": "Days between sowing and the start of continuous monitoring.",
     "days_growing": "Number of days the crop was growing (sowing to harvest).",
-    "pp_reading"  : "Pani Pipe reading in centimetres — the distance from the top of the pipe down to the water surface inside it. Lower = more flooded, higher = drier. Formula: BGL = 15 − PP Reading.",
+    "pp_reading"  : "Daily water level reading — the Pani Pipe reading in centimetres — the distance from the top of the pipe down to the water surface inside it. Lower = more flooded, higher = drier. Formula: BGL = 15 − PP Reading.",
     "duplicate"   : "Flags dates where more than one raw reading was submitted for this farmer and the readings were averaged together.",
     "zero_repl"   : "Flags a reading of 0 (physically impossible) that was automatically replaced with the previous day's value.",
     "bgl"         : "Water level relative to the soil surface, in cm (15 − PP Reading). Positive = water above the surface (flooded). Negative = water below the surface (drying).",
@@ -385,13 +399,16 @@ def load_summary(url):
         r = requests.get(url, timeout=20)
         r.raise_for_status()
         df = pd.read_csv(StringIO(r.text))
-        for col in [S["sowing_date"], S["cm_start"], S["cm_end"], S["harvest_date"]]:
+        for col in [S["sowing_date"], S["cm_start"], S["cm_end"], S["harvest_date"], S["cm_backend"]]:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], dayfirst=True, errors="coerce")
         num_s = [v for k, v in S.items()
                  if k not in ["serial", "farmer", "village", "type", "method",
                               "sowing_date", "cm_start", "cm_end", "harvest_date", "gps",
-                              "savings_pct", "error_margin"]]
+                              "savings_pct", "error_margin", "crp", "project_area",
+                              "command_area", "canal_pos", "subcanal_pos", "soil",
+                              "irrig_mode", "seed", "cm_backend", "default_pair",
+                              "confidence", "remark1", "remark2"]]
         for col in num_s:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -401,7 +418,7 @@ def load_summary(url):
             if S[key] in df.columns:
                 df[S[key]] = pd.to_numeric(
                     df[S[key]].astype(str).str.rstrip("%").str.strip(), errors="coerce")
-        for col in [S["farmer"], S["village"], S["type"], S["gps"]]:
+        for col in [S["farmer"], S["village"], S["type"], S["gps"], S["default_pair"]]:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
         return df
@@ -666,6 +683,327 @@ def fmt_or_dash(val, fmt_str="{:.1f}"):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# SHARED SCOREBOARD / TABLE SECTIONS
+# One definition of each section (KPI, Productivity, Water Usage,
+# Irrigation, Information) drives the Results Overview (group-level),
+# Individual Farmer (one farmer) and Compare Farmers (two farmers) tabs.
+# ═══════════════════════════════════════════════════════════════════
+
+# (card label, S key, number format, aggregation across a group of farmers)
+KPI_SPEC = [
+    ("Actual Water Savings (%)",      "savings_pct", "{:,.1f}%", "mean"),
+    ("Actual Water Savings (mm)",     "savings_mm",  "{:,.1f}",  "mean"),
+    ("Actual Vol. Water Saving (m3)", "savings_m3",  "{:,.0f}",  "sum"),
+]
+PRODUCTIVITY_SPEC = [
+    ("Yield (kg)",                                "yield_kg",     "{:,.0f}", "mean"),
+    ("Price per kg (Rs)",                         "price_per_kg", "{:,.1f}", "mean"),
+    ("Income (Rs)",                               "income",       "{:,.0f}", "mean"),
+    ("Crop water productivity (CWP) Kg/m3",       "cwp",          "{:.2f}",  "mean"),
+    ("Economic water productivity (EWP) Rs/m3",   "ewp",          "{:.2f}",  "mean"),
+]
+WATER_SPEC = [
+    ("Total Irrigated Water Depth (mm)",        "total_water_mm",     "{:,.0f}", "mean"),
+    ("Total Volumetric Water Irrigated (m3)",   "total_water_m3",     "{:,.0f}", "sum"),
+    ("Total Water Recharged (mm)",              "total_recharged_mm", "{:,.0f}", "mean"),
+    ("Total Volumetric Water Recharged (m3)",   "total_recharged_m3", "{:,.0f}", "sum"),
+]
+IRRIGATION_SPEC = [
+    ("No. Irrigations (a) Reported",   "irrigations_a"),
+    ("No. Irrigations (b) Calculated", "irrigations_b"),
+    ("No. of Days Water Level Stayed Above Surface", "days_above"),
+    ("No. of Days Water Level Stayed Below Surface", "days_below"),
+    ("No of days Water Level is more than 10cm above Surface (High Wet)", "max_wl_events"),
+    ("No of days Water Level is less than 10cm Below Surface (Very Dry)", "min_wl_events"),
+    ("No. of Field Drying Events (3 or more Consecutive Days Below Surface)", "drying_events"),
+    ("Max Dry Period Duration (days)", "max_dry_duration"),
+    ("Avg Drying Days (Overall)",      "avg_drying_overall"),
+    ("Avg Drying Days Phase 1 (0-30 DAS)",  "avg_drying_p1"),
+    ("Avg Drying Days Phase 2 (30-60 DAS)", "avg_drying_p2"),
+    ("Avg Drying Days Phase 3 (60-90 DAS)", "avg_drying_p3"),
+    ("Avg Drying Days Phase 4 (90+ DAS)",   "avg_drying_p4"),
+    ("Irrigation depth in rising limb - Flood (mm)", "rl_flood_mm"),
+    ("Irrigation depth in rising limb - Inter (mm)", "rl_inter_mm"),
+    ("Irrigation depth in rising limb - Soil (mm)",  "rl_soil_mm"),
+    ("Water level drop in falling limb - Flood (mm)", "fl_flood_mm"),
+    ("Water level drop in falling limb - Inter (mm)", "fl_inter_mm"),
+    ("Water level drop in falling limb - Soil (mm)",  "fl_soil_mm"),
+]
+# (row label, S key, kind) — the Information table on Individual Farmer Results
+INFO_SPEC = [
+    ("Monitoring CRP Incharge",                     "crp",             "text"),
+    ("Total Land Area (acres)",                     "total_land",      "num"),
+    ("Size of Monitoring Field (acres)",            "land_area",       "num"),
+    ("Location of Monitoring Sites - GPS",          "gps",             "text"),
+    ("Project Area",                                "project_area",    "text"),
+    ("Command Area / Non Command Area",             "command_area",    "text"),
+    ("Broad Canal Positioning",                     "canal_pos",       "text"),
+    ("Positioning within Sub Canal System",         "subcanal_pos",    "text"),
+    ("Soil Type",                                   "soil",            "text"),
+    ("Method of Cultivation (Sowing)",              "method",          "text"),
+    ("Mode of Irrigation",                          "irrig_mode",      "text"),
+    ("Seed Variety",                                "seed",            "text"),
+    ("Date of Sowing of Seeds in the Field",        "sowing_date",     "date"),
+    ("Continuous Monitoring Start Date (Backend)",  "cm_backend",      "date"),
+    ("No. of Days between Sowing and Monitoring",   "days_sow_to_mon", "num"),
+    ("Start Date of Continuous Monitoring",         "cm_start",        "date"),
+    ("End Date of Continuous Monitoring",           "cm_end",          "date"),
+    ("No. of Days Monitored",                       "days_monitored",  "num"),
+    ("Date of Harvest",                             "harvest_date",    "date"),
+    ("No. of Days of Growing",                      "days_growing",    "num"),
+    ("Total Rainfall During Monitoring Period (mm)", "rainfall",       "num"),
+    ("Remark 1 - Observation at Start",             "remark1",         "text"),
+    ("Remark 2 - Observation after Completion",     "remark2",         "text"),
+]
+REMARKS_SPEC = [
+    ("Remark 1 - Observation at Start",         "remark1", "text"),
+    ("Remark 2 - Observation after Completion", "remark2", "text"),
+]
+AGG_NOTE = {"mean": "avg per farmer", "sum": "group total"}
+
+
+def _fmt_plain(v):
+    """Table cell text: whole numbers without decimals, others to 2 dp, blanks as an em-dash."""
+    if v is None or (not isinstance(v, str) and pd.isna(v)):
+        return "—"
+    if isinstance(v, (int, np.integer)):
+        return f"{v:,}"
+    if isinstance(v, (float, np.floating)):
+        return f"{round(float(v), 2):,.2f}".rstrip("0").rstrip(".")
+    return str(v)
+
+
+def scoreboard(cards, accent, ncols=3):
+    """cards = [(label, value text, sub text, tooltip key)] laid out ncols per row."""
+    for i in range(0, len(cards), ncols):
+        cols = st.columns(ncols)
+        for col, (label, val, sub, tip) in zip(cols, cards[i:i + ncols]):
+            metric_card(col, label, val, sub, tip, accent)
+
+
+def kv_table(rows, value_label="Value"):
+    """Metric/value table (text-wrapped, so long remarks stay readable)."""
+    df = pd.DataFrame(rows, columns=["Metric", value_label]).set_index("Metric")
+    st.table(df)
+
+
+def _col_values(src, key):
+    """Series of values for a group (DataFrame) or a one-element list for one farmer (Series)."""
+    col = S[key]
+    if isinstance(src, pd.DataFrame):
+        return src[col].dropna() if col in src.columns else pd.Series(dtype=float)
+    v = src.get(col) if src is not None else None
+    return pd.Series([v]).dropna() if v is not None else pd.Series(dtype=float)
+
+
+def section_cards(kind, src, tag=""):
+    """Scoreboard cards for one section. src = DataFrame (a group of farmers, aggregated)
+    or a Series (one farmer's Summary row). tag = e.g. 'Treatment only' for group cards."""
+    is_group = isinstance(src, pd.DataFrame)
+    spec = {"kpi": KPI_SPEC, "productivity": PRODUCTIVITY_SPEC, "water": WATER_SPEC}[kind]
+    cards = []
+    if kind == "kpi" and is_group:
+        pct = _col_values(src, "savings_pct")
+        n_farmers = src[S["farmer"]].nunique() if (not src.empty and S["farmer"] in src.columns) else 0
+        cards += [
+            ("No. of AWD Farmers", f"{n_farmers:,}", tag, "type"),
+            ("Farmers with +ve Savings", f"{int((pct > 0).sum()):,}", tag, "savings_pct"),
+            ("Farmers with -ve Savings", f"{int((pct < 0).sum()):,}", tag, "savings_pct"),
+        ]
+    for label, key, fs, agg in spec:
+        vals = _col_values(src, key)
+        val = getattr(vals, agg)() if not vals.empty else None
+        sub = f"{tag} · {AGG_NOTE[agg]}" if is_group else ""
+        cards.append((label, fmt_or_dash(val, fs), sub, key))
+    return cards
+
+
+def irrigation_rows(src):
+    """(label, text) rows — group mean across farmers, or one farmer's value."""
+    is_group = isinstance(src, pd.DataFrame)
+    rows = []
+    for label, key in IRRIGATION_SPEC:
+        vals = _col_values(src, key)
+        if vals.empty:
+            rows.append((label, "—"))
+        else:
+            rows.append((label, _fmt_plain(float(vals.mean() if is_group else vals.iloc[0]))))
+    return rows
+
+
+def info_rows(row, spec=INFO_SPEC):
+    """Rows for the Information / Remarks tables. Fields absent from the sheet are skipped."""
+    rows = []
+    for label, key, kind in spec:
+        col = S[key]
+        if row is None or col not in row.index:
+            continue
+        v = row.get(col)
+        if pd.isna(v) or str(v).strip() in ("", "nan"):
+            rows.append((label, "—"))
+        elif kind == "date":
+            rows.append((label, pd.Timestamp(v).strftime("%d %b %Y")))
+        elif kind == "num":
+            rows.append((label, _fmt_plain(float(v))))
+        else:
+            rows.append((label, str(v).strip()))
+    return rows
+
+
+def render_section(kind, src, accent, tag="", ncols=2):
+    """Body of one collapsible section (scoreboard cards, or a table for Irrigation)."""
+    if kind == "irrigation":
+        is_group = isinstance(src, pd.DataFrame)
+        kv_table(irrigation_rows(src), "Avg per farmer" if is_group else "Value")
+        if is_group and tag:
+            st.caption(f"{tag} · mean across farmers")
+    else:
+        scoreboard(section_cards(kind, src, tag), accent, ncols)
+
+
+SECTION_TITLES = {
+    "kpi": "Key Performance Index",
+    "productivity": "Productivity",
+    "water": "Water Usage",
+    "irrigation": "Irrigation",
+}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# BUILD-YOUR-OWN CHART — shared by Individual Farmer and Compare Farmers
+# The user picks chart type, X, Y, colour, aggregation and filters; it opens
+# pre-filled with a sensible default graph rather than a blank canvas.
+# ═══════════════════════════════════════════════════════════════════
+
+CHART_TYPES = ["Line", "Bar", "Stacked bar", "Box plot", "Pie"]
+AGG_CHOICES = {"None (raw values)": None, "Mean": "mean", "Sum": "sum", "Median": "median",
+               "Count": "count", "Max": "max", "Min": "min"}
+PALETTE = [C["treatment"], C["control"], C["accent"], "#8E6BB0", "#E0A030", "#3A9E9E", "#B24C6B", "#7A7A52"]
+LBL_DWL = "Daily Water Level Reading (cm)"
+LBL_BGL = "Water Level vs Surface (cm)"
+DAILY_RENAME = {
+    M["pp_reading"]: LBL_DWL,
+    M["bgl"]: LBL_BGL,
+    M["irrigated"]: "Irrigation Reported (1 = yes)",
+    M["irrig_calc"]: "Irrigation Calculated (1 = yes)",
+}
+
+
+def builder_daily(df):
+    """Dataset spec for the chart builder from Master Analysis rows."""
+    d = df.copy()
+    d["Group"] = to_group(d[M["type"]])
+    for c in (M["irrigated"], M["irrig_calc"]):
+        if c in d.columns:
+            d[c] = d[c].astype(int)
+    d = d.rename(columns=DAILY_RENAME)
+    cats = [c for c in [M["farmer"], M["village"], "Group", M["phase"], M["fl_rl"], M["event"]] if c in d.columns]
+    nums = [c for c in [DAS_COL, LBL_DWL, LBL_BGL, M["change_wl"], M["gopal_cm"], M["cum_irrig"],
+                        DAILY_RENAME[M["irrigated"]], DAILY_RENAME[M["irrig_calc"]],
+                        M["rain"], M["cum_rain"]] if c in d.columns]
+    return dict(df=d, x=[M["date"]] + nums + cats, y=nums, color=cats, filters=[M["phase"], "Group"])
+
+
+def builder_summary(df):
+    """Dataset spec for the chart builder from Summary rows."""
+    d = df.copy()
+    d["Group"] = to_group(d[S["type"]])
+    skip = {"serial", "gps", "type", "farmer", "village", "method", "sowing_date", "cm_start", "cm_end",
+            "harvest_date", "crp", "project_area", "command_area", "canal_pos", "subcanal_pos", "soil",
+            "irrig_mode", "seed", "remark1", "remark2", "default_pair", "confidence", "farmer_id", "cm_backend"}
+    nums = [S[k] for k in S if k not in skip and S[k] in d.columns and d[S[k]].notna().any()
+            and pd.api.types.is_numeric_dtype(d[S[k]])]
+    cats = [c for c in [S["farmer"], S["village"], "Group", S["method"]] if c in d.columns]
+    return dict(df=d, x=cats + nums, y=nums, color=cats, filters=[S["village"], "Group"])
+
+
+def chart_builder(key, datasets):
+    """datasets = {name: spec} where spec = builder_*() output plus a 'default' dict
+    (chart, x, y, color, agg). Renders the controls and the chart."""
+    names = list(datasets)
+    ds_name = st.radio("Data", names, horizontal=True, key=f"{key}_ds") if len(names) > 1 else names[0]
+    ds = datasets[ds_name]
+    df, dflt = ds["df"], ds["default"]
+    k = f"{key}_{ds_name}"
+
+    def _idx(opts, val):
+        return opts.index(val) if val in opts else 0
+
+    c1, c2, c3, c4, c5 = st.columns([1, 1.5, 1.5, 1.2, 1.1])
+    chart = c1.selectbox("Chart type", CHART_TYPES, index=_idx(CHART_TYPES, dflt["chart"]), key=f"{k}_chart")
+    x_opts = ds["x"] + (["(none)"] if chart == "Box plot" else [])
+    x = c2.selectbox("Slices (category)" if chart == "Pie" else "X-axis", x_opts,
+                     index=_idx(x_opts, dflt["x"]), key=f"{k}_x")
+    y = c3.selectbox("Values" if chart == "Pie" else "Y-axis", ds["y"],
+                     index=_idx(ds["y"], dflt["y"]), key=f"{k}_y")
+    c_opts = ["(none)"] + ds["color"]
+    color = c4.selectbox("Colour by", c_opts, index=_idx(c_opts, dflt.get("color", "(none)")),
+                         key=f"{k}_color", disabled=(chart == "Pie"))
+    a_opts = list(AGG_CHOICES)
+    agg_label = c5.selectbox("Aggregate", a_opts, index=_idx(a_opts, dflt.get("agg", a_opts[0])), key=f"{k}_agg")
+
+    flt_cols = st.columns(max(len(ds["filters"]), 1))
+    d = df
+    for col, fcol in zip(flt_cols, [f for f in ds["filters"] if f in df.columns]):
+        opts = sorted(df[fcol].dropna().astype(str).unique())
+        sel = col.multiselect(f"Filter: {fcol}", opts, key=f"{k}_f_{fcol}", placeholder="All")
+        if sel:
+            d = d[d[fcol].astype(str).isin(sel)]
+    if d.empty:
+        st.info("No rows match these filters.")
+        return
+
+    colour = None if (color == "(none)" or chart == "Pie") else color
+    xcol = None if x == "(none)" else x
+    agg = AGG_CHOICES[agg_label]
+    if chart == "Pie":
+        agg = agg or "sum"
+    plot_df = d
+    if agg and xcol and chart != "Box plot":
+        gkeys = [xcol] + ([colour] if colour and colour != xcol else [])
+        plot_df = d.groupby(gkeys, dropna=True, observed=True)[y].agg(agg).reset_index()
+
+    def _cmap(col):
+        if col == "Group":
+            return GROUP_COLOR
+        if col == M["phase"]:
+            return C["phase"]
+        return None
+
+    kw = dict(color_discrete_sequence=PALETTE)
+    if chart == "Line":
+        pdf = plot_df.sort_values(xcol) if xcol else plot_df
+        fig = px.line(pdf, x=xcol, y=y, color=colour, markers=len(pdf) < 80,
+                      color_discrete_map=_cmap(colour) if colour else None, **kw)
+    elif chart in ("Bar", "Stacked bar"):
+        fig = px.bar(plot_df, x=xcol, y=y, color=colour,
+                     barmode="stack" if chart == "Stacked bar" else "group",
+                     color_discrete_map=_cmap(colour) if colour else None, **kw)
+    elif chart == "Box plot":
+        fig = px.box(plot_df, x=xcol, y=y, color=colour,
+                     color_discrete_map=_cmap(colour) if colour else None, **kw)
+    else:
+        if plot_df[y].lt(0).any():
+            st.warning("A pie chart can't show negative values — negatives are shown as zero-size slices.")
+            plot_df = plot_df.assign(**{y: plot_df[y].clip(lower=0)})
+        fig = px.pie(plot_df, names=xcol, values=y, hole=0.45, color=xcol,
+                     color_discrete_map=_cmap(xcol) or {}, **kw)
+        if plot_df[xcol].nunique() > 20:
+            st.info("This pie has many slices — pick a category with fewer values (e.g. Group, Village, Phase) for a clearer chart.")
+
+    style_fig(fig, height=400, legend=True)
+    fig.update_layout(margin=dict(l=10, r=10, t=30, b=10))
+    if chart in ("Line", "Bar", "Stacked bar"):
+        fig.update_layout(hovermode="x unified")
+    how = f"{agg_label.lower()} of " if agg else ""
+    st.caption(f"{chart}: {how}**{y}**" + (f" by **{xcol}**" if xcol else "") +
+               (f", coloured by **{colour}**" if colour else "") + f" · {len(d):,} rows used")
+    st.plotly_chart(fig, use_container_width=True)
+    st.download_button("📥 Download chart data", plot_df.to_csv(index=False).encode(),
+                       f"{key}_chart_data.csv", "text/csv", key=f"{k}_dl")
+
+
+# ═══════════════════════════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════════════
 
@@ -775,130 +1113,86 @@ def tab_results_overview(master_f, summary_f, master, summary):
         st.info("No data loaded.")
         return
 
-    # ── Subtitle + conceptual diagram ────────────────────────────────
-    csub, cimg = st.columns([2, 1])
-    with csub:
-        st.markdown(
-            "This dashboard presents the key findings from an impact evaluation study "
-            "conducted by WELL Labs, assessing the Alternate Wetting and Drying (AWD) "
-            "intervention promoted by the M. S. Swaminathan Research Foundation (MSSRF) "
-            "in Theni district, Tamil Nadu. The initiative was implemented under a "
-            "Corporate Social Responsibility (CSR) project aimed at addressing water "
-            "scarcity in the region.\n\n"
-            "To quantify the effectiveness of the AWD practice, WELL Labs designed a "
-            "robust comparative study. From a total cohort of 700 farmers across 7 "
-            "villages, a representative sample of 100 farmers was selected using a "
-            "stratified random sampling technique. This rigorous approach ensures that "
-            "the results accurately reflect the diverse conditions across the "
-            "intervention area.\n\n"
-            "The core objective of this evaluation is to measure tangible water savings "
-            "achieved through the adoption of AWD. Daily water levels were "
-            "systematically monitored using the \"Pani Pipe\" method across both "
-            "Treatment (AWD-adopting) and Control (conventional practice) fields. The "
-            "resulting data has been analyzed to determine the differential in water "
-            "consumption between the two groups.\n\n"
-            "For a detailed understanding of the data collection process, please refer "
-            "to the <a href=\"#\">Playbook for Measuring Water Level Using Pani "
-            "Pipes</a>."
-        , unsafe_allow_html=True)
-    with cimg:
-        img_path = Path(__file__).parent / "assets" / "awd_conceptual_diagram.png"
-        if img_path.exists():
-            st.image(str(img_path),
-                caption="AWD Conceptual diagram: Water savings from AWD occurs by "
-                        "reducing the total number of irrigations, thereby reducing "
-                        "evaporative losses from standing water.",
-                use_container_width=True)
-    st.divider()
-
-    # ── Map + farmer-distribution table ──────────────────────────────
-    cmap, ctable = st.columns([1, 1])
-    with cmap:
-        st.subheader("Farmer Locations & Village Boundaries", help=H("gps"))
-        st.caption("Every farmer in the study (n=100), pinned by GPS location. Toggle boundary layers with the control in the top-right of the map.")
-        render_farmer_map(summary)
-    with ctable:
-        st.subheader("Distribution of Farmers Identified for This Evaluation (n=100)")
-        if not summary.empty:
-            sm = summary.copy()
-            sm["Group"] = to_group(sm[S["type"]])
-            dist = pd.crosstab(sm[S["village"]], sm["Group"])
-            for grp in ["Treatment", "Control"]:
-                if grp not in dist.columns:
-                    dist[grp] = 0
-            dist = dist[["Treatment", "Control"]]
-            dist["Total"] = dist["Treatment"] + dist["Control"]
-            dist.loc["Total"] = dist.sum()
-            st.dataframe(dist, use_container_width=True, height=320)
-
-    st.divider()
-
-    # ── Key performance results ──────────────────────────────────────
     sv_t = summary[to_group(summary[S["type"]]) == "Treatment"] if not summary.empty else summary
     sv_c = summary[to_group(summary[S["type"]]) == "Control"] if not summary.empty else summary
 
-    ckpi, cbaseline = st.columns([4, 1])
-    with ckpi:
-        st.markdown("**Key Performance Results**")
-        n_awd    = safe_nunique(sv_t, S["farmer"])
-        n_pos    = int((sv_t[S["savings_pct"]] > 0).sum()) if S["savings_pct"] in sv_t.columns else 0
-        n_neg    = int((sv_t[S["savings_pct"]] < 0).sum()) if S["savings_pct"] in sv_t.columns else 0
-        avg_pct  = safe_mean(sv_t, S["savings_pct"])
-        avg_mm   = safe_mean(sv_t, S["savings_mm"])
-        total_m3 = safe_sum(sv_t, S["savings_m3"])
-
-        k1, k2, k3 = st.columns(3)
-        metric_card(k1, "No. of AWD Farmers", f"{n_awd:,}", "Treatment only", "type", C["treatment"])
-        metric_card(k2, "Farmers with +ve Savings", f"{n_pos:,}", "Treatment only", "savings_pct", C["accent"])
-        metric_card(k3, "Farmers with -ve Savings", f"{n_neg:,}", "Treatment only", "savings_pct", C["control"])
-        k4, k5, k6 = st.columns(3)
-        metric_card(k4, "Avg Actual Savings", fmt_or_dash(avg_pct, "{:.1f}%"), "Treatment only", "savings_pct", C["accent"])
-        metric_card(k5, "Avg Actual Savings", fmt_or_dash(avg_mm, "{:,.0f} mm"), "Treatment only", "savings_mm", C["accent"])
-        metric_card(k6, "Total Volumetric Savings", fmt_or_dash(total_m3, "{:,.0f} m³"), "Treatment only, aggregate", "savings_m3", C["accent"])
-    with cbaseline:
-        st.markdown("**Baseline**")
-        with st.container(border=True):
+    # ── Subsection 1 — description + conceptual diagram ──────────────
+    with st.expander("About this evaluation", expanded=True):
+        csub, cimg = st.columns([2, 1])
+        with csub:
             st.markdown(
-                "The baseline irrigation depth used is <b>1100mm</b> irrigated water "
-                "depth for paddy in Tamil Nadu based on "
-                "<a href=\"http://www.agritech.tnau.ac.in/agriculture/agri_cropproduction_cereals_rice_tranpudlow_mainfield_water_mgmt.html\" "
-                "target=\"_blank\"><b>TNAU</b></a> standards.",
-                unsafe_allow_html=True)
+                "This dashboard presents the key findings from an impact evaluation study "
+                "conducted by WELL Labs, assessing the Alternate Wetting and Drying (AWD) "
+                "intervention promoted by the M. S. Swaminathan Research Foundation (MSSRF) "
+                "in Theni district, Tamil Nadu. The initiative was implemented under a "
+                "Corporate Social Responsibility (CSR) project aimed at addressing water "
+                "scarcity in the region.\n\n"
+                "To quantify the effectiveness of the AWD practice, WELL Labs designed a "
+                "robust comparative study. From a total cohort of 700 farmers across 7 "
+                "villages, a representative sample of 100 farmers was selected using a "
+                "stratified random sampling technique. This rigorous approach ensures that "
+                "the results accurately reflect the diverse conditions across the "
+                "intervention area.\n\n"
+                "The core objective of this evaluation is to measure tangible water savings "
+                "achieved through the adoption of AWD. Daily water levels were "
+                "systematically monitored using the \"Pani Pipe\" method across both "
+                "Treatment (AWD-adopting) and Control (conventional practice) fields. The "
+                "resulting data has been analyzed to determine the differential in water "
+                "consumption between the two groups.\n\n"
+                "For a detailed understanding of the data collection process, please refer "
+                "to the <a href=\"#\">Playbook for Measuring Water Level Using Pani "
+                "Pipes</a>."
+            , unsafe_allow_html=True)
+        with cimg:
+            img_path = Path(__file__).parent / "assets" / "awd_conceptual_diagram.png"
+            if img_path.exists():
+                st.image(str(img_path),
+                    caption="AWD Conceptual diagram: Water savings from AWD occurs by "
+                            "reducing the total number of irrigations, thereby reducing "
+                            "evaporative losses from standing water.",
+                    use_container_width=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    # ── Subsection 2 — map + farmer-distribution table ───────────────
+    with st.expander("Farmer Locations & Village Boundaries · Distribution of Farmers (n=100)", expanded=True):
+        cmap, ctable = st.columns([1, 1])
+        with cmap:
+            st.subheader("Farmer Locations & Village Boundaries", help=H("gps"))
+            st.caption("Every farmer in the study (n=100), pinned by GPS location. Toggle boundary layers with the control in the top-right of the map.")
+            render_farmer_map(summary)
+        with ctable:
+            st.subheader("Distribution of Farmers Identified for This Evaluation (n=100)")
+            if not summary.empty:
+                sm = summary.copy()
+                sm["Group"] = to_group(sm[S["type"]])
+                dist = pd.crosstab(sm[S["village"]], sm["Group"])
+                for grp in ["Treatment", "Control"]:
+                    if grp not in dist.columns:
+                        dist[grp] = 0
+                dist = dist[["Treatment", "Control"]]
+                dist["Total"] = dist["Treatment"] + dist["Control"]
+                dist.loc["Total"] = dist.sum()
+                st.dataframe(dist, use_container_width=True, height=320)
 
-    # ── Irrigation count boxes (Treatment only, Calculated) ──────────
-    st.markdown("**Irrigations (Treatment only)**")
-    i1, i2, i3 = st.columns(3)
-    irr_avg = safe_mean(sv_t, S["irrigations_b"])
-    irr_max = sv_t[S["irrigations_b"]].max() if S["irrigations_b"] in sv_t.columns and not sv_t.empty else None
-    irr_min = sv_t[S["irrigations_b"]].min() if S["irrigations_b"] in sv_t.columns and not sv_t.empty else None
-    metric_card(i1, "Average No. of Irrigations", fmt_or_dash(irr_avg, "{:.1f}"), "", "irrigations_b", C["treatment"])
-    metric_card(i2, "Max Irrigations", fmt_or_dash(irr_max, "{:.0f}"), "", "irrigations_b", C["treatment"])
-    metric_card(i3, "Min Irrigations", fmt_or_dash(irr_min, "{:.0f}"), "", "irrigations_b", C["treatment"])
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ── Irrigation depth boxes — Treatment (blue) then Control (light red) ──
-    st.markdown("**Irrigation Depth (mm) — Treatment**")
-    dt1, dt2, dt3 = st.columns(3)
-    t_max = sv_t[S["total_water_mm"]].max() if S["total_water_mm"] in sv_t.columns and not sv_t.empty else None
-    t_min = sv_t[S["total_water_mm"]].min() if S["total_water_mm"] in sv_t.columns and not sv_t.empty else None
-    t_avg = safe_mean(sv_t, S["total_water_mm"])
-    metric_card(dt1, "Max Irrigation Depth", fmt_or_dash(t_max, "{:,.0f} mm"), "Treatment", "total_water_mm", C["treatment"])
-    metric_card(dt2, "Min Irrigation Depth", fmt_or_dash(t_min, "{:,.0f} mm"), "Treatment", "total_water_mm", C["treatment"])
-    metric_card(dt3, "Average Irrigation Depth", fmt_or_dash(t_avg, "{:,.0f} mm"), "Treatment", "total_water_mm", C["treatment"])
-
-    st.markdown("**Irrigation Depth (mm) — Control**")
-    dc1, dc2, dc3 = st.columns(3)
-    c_max = sv_c[S["total_water_mm"]].max() if S["total_water_mm"] in sv_c.columns and not sv_c.empty else None
-    c_min = sv_c[S["total_water_mm"]].min() if S["total_water_mm"] in sv_c.columns and not sv_c.empty else None
-    c_avg = safe_mean(sv_c, S["total_water_mm"])
-    metric_card(dc1, "Max Irrigation Depth", fmt_or_dash(c_max, "{:,.0f} mm"), "Control", "total_water_mm", C["control"])
-    metric_card(dc2, "Min Irrigation Depth", fmt_or_dash(c_min, "{:,.0f} mm"), "Control", "total_water_mm", C["control"])
-    metric_card(dc3, "Average Irrigation Depth", fmt_or_dash(c_avg, "{:,.0f} mm"), "Control", "total_water_mm", C["control"])
-
-    st.divider()
+    # ── Subsection 3 — scoreboards: Treatment (left) | Control (right) ─
+    # Always the full n=100 cohort (not the sidebar filters).
+    st.markdown("### Results — Treatment vs Control")
+    st.caption("Group figures across the full cohort. Cards show the average per farmer, "
+               "or the group total for volumes (m³) and the farmer counts. Savings are measured "
+               "against the 1100 mm TNAU baseline — "
+               "[TNAU standard](http://www.agritech.tnau.ac.in/agriculture/agri_cropproduction_cereals_rice_tranpudlow_mainfield_water_mgmt.html).")
+    hl, hr = st.columns(2)
+    hl.markdown(f"<div style='border-bottom:3px solid {C['treatment']};font-weight:700;"
+                f"color:{C['treatment']};padding-bottom:2px;'>Treatment (AWD)</div>", unsafe_allow_html=True)
+    hr.markdown(f"<div style='border-bottom:3px solid {C['control']};font-weight:700;"
+                f"color:{C['control']};padding-bottom:2px;'>Control (conventional)</div>", unsafe_allow_html=True)
+    for kind in ["kpi", "productivity", "water", "irrigation"]:
+        left, right = st.columns(2)
+        opened = kind in ("kpi", "productivity")
+        for col, grp, df_g, accent in [(left, "Treatment", sv_t, C["treatment"]),
+                                       (right, "Control", sv_c, C["control"])]:
+            with col:
+                with st.expander(f"{SECTION_TITLES[kind]} — {grp} only", expanded=opened):
+                    render_section(kind, df_g, accent, tag=f"{grp} only")
 
     # ── Row 1 charts (sidebar-filtered) ──────────────────────────────
     #cl, cr = st.columns([1.3, 1])
@@ -965,182 +1259,178 @@ def tab_results_overview(master_f, summary_f, master, summary):
                 #legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5, font_size=9))
             #st.plotly_chart(fig_donut, use_container_width=True)
 
-    cl, cr = st.columns([1, 1])
+    # ── Extra charts (sidebar-filtered) — collapsed to keep the page clean ──
+    with st.expander("Hydrological Phase Distribution", expanded=False):
+        cl, cr = st.columns([1, 1])
 
-    if not master_f.empty:
+        if not master_f.empty:
 
-        def _phase_counts(df):
-            pc = df[M["phase"]].value_counts().reset_index()
-            pc.columns = ["phase", "count"]
-            pc["phase"] = pd.Categorical(
-                pc["phase"],
-                categories=PHASE_ORDER,
-                ordered=True
-            )
-            return pc.sort_values("phase").dropna(subset=["phase"])
-
-        mm = master_f.copy()
-        mm["Group"] = to_group(mm[M["type"]])
-
-    # Treatment
-        pc_t = _phase_counts(
-            mm[mm["Group"] == "Treatment"]
-        )
-
-    # Control
-        pc_c = _phase_counts(
-            mm[mm["Group"] == "Control"]
-        )
-
-    # --------------------------------------------------
-    # Treatment chart
-    # --------------------------------------------------
-        with cl:
-            st.subheader(
-                "Hydrological Phase Distribution (Treatment)",
-                help=H("phase")
-            )
-
-            st.caption(
-                "Treatment · FL group then RL group"
-            )
-
-            fig_treatment = go.Figure()
-
-            if not pc_t.empty:
-                fig_treatment.add_trace(go.Pie(
-                    labels=pc_t["phase"],
-                    values=pc_t["count"],
-                    sort=False,
-                    hole=0.62,
-                    domain=dict(x=[0, 1], y=[0, 1]),
-                    marker=dict(
-                        colors=[
-                            C["phase_treatment"].get(p, "#999")
-                            for p in pc_t["phase"]
-                        ],
-                        line=dict(color="white", width=1)
-                    ),
-                    textinfo="none",
-                    name="Treatment",
-                    hovertemplate=(
-                        "<b>Treatment</b><br>"
-                        "%{label}: %{percent}"
-                        "<extra></extra>"
-                    )
-                ))
-
-            fig_treatment.update_layout(
-                height=340,
-                margin=dict(l=10, r=10, t=10, b=10),
-                paper_bgcolor="rgba(0,0,0,0)",
-                showlegend=True,
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=-0.18,
-                    xanchor="center",
-                    x=0.5,
-                    font_size=9
+            def _phase_counts(df):
+                pc = df[M["phase"]].value_counts().reset_index()
+                pc.columns = ["phase", "count"]
+                pc["phase"] = pd.Categorical(
+                    pc["phase"],
+                    categories=PHASE_ORDER,
+                    ordered=True
                 )
+                return pc.sort_values("phase").dropna(subset=["phase"])
+
+            mm = master_f.copy()
+            mm["Group"] = to_group(mm[M["type"]])
+
+        # Treatment
+            pc_t = _phase_counts(
+                mm[mm["Group"] == "Treatment"]
             )
 
-            st.plotly_chart(
-                fig_treatment,
-                use_container_width=True
+        # Control
+            pc_c = _phase_counts(
+                mm[mm["Group"] == "Control"]
             )
 
-    # --------------------------------------------------
-    # Control chart
-    # --------------------------------------------------
-        with cr:
-            st.subheader(
-                "Hydrological Phase Distribution (Control)",
-                help=H("phase")
-            )
-
-            st.caption(
-                "Control · FL group then RL group"
-            )
-
-            fig_control = go.Figure()
-
-            if not pc_c.empty:
-                fig_control.add_trace(go.Pie(
-                    labels=pc_c["phase"],
-                    values=pc_c["count"],
-                    sort=False,
-                    hole=0.62,
-                    domain=dict(x=[0, 1], y=[0, 1]),
-                    marker=dict(
-                        colors=[
-                            C["phase_control"].get(p, "#999")
-                            for p in pc_c["phase"]
-                        ],
-                        line=dict(color="white", width=1)
-                    ),
-                    textinfo="none",
-                    name="Control",
-                    hovertemplate=(
-                        "<b>Control</b><br>"
-                        "%{label}: %{percent}"
-                        "<extra></extra>"
-                    )
-                ))
-
-            fig_control.update_layout(
-                height=340,
-                margin=dict(l=10, r=10, t=10, b=10),
-                paper_bgcolor="rgba(0,0,0,0)",
-                showlegend=True,
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=-0.18,
-                    xanchor="center",
-                    x=0.5,
-                    font_size=9
+        # --------------------------------------------------
+        # Treatment chart
+        # --------------------------------------------------
+            with cl:
+                st.subheader(
+                    "Hydrological Phase Distribution (Treatment)",
+                    help=H("phase")
                 )
-            )
 
-            st.plotly_chart(
-                fig_control,
-                use_container_width=True
-            )
+                st.caption(
+                    "Treatment · FL group then RL group"
+                )
 
-    st.divider()
+                fig_treatment = go.Figure()
 
-# ═══════════════════════════════════════════════════════════════════
-# Changes
-# ═══════════════════════════════════════════════════════════════════
+                if not pc_t.empty:
+                    fig_treatment.add_trace(go.Pie(
+                        labels=pc_t["phase"],
+                        values=pc_t["count"],
+                        sort=False,
+                        hole=0.62,
+                        domain=dict(x=[0, 1], y=[0, 1]),
+                        marker=dict(
+                            colors=[
+                                C["phase_treatment"].get(p, "#999")
+                                for p in pc_t["phase"]
+                            ],
+                            line=dict(color="white", width=1)
+                        ),
+                        textinfo="none",
+                        name="Treatment",
+                        hovertemplate=(
+                            "<b>Treatment</b><br>"
+                            "%{label}: %{percent}"
+                            "<extra></extra>"
+                        )
+                    ))
 
-    # ── Row 2 charts (sidebar-filtered, grouped bar by village) ──────
-    c9a, c9b = st.columns(2)
-    with c9a:
-        st.subheader("Irrigation Depth Distribution — Control and Treatment", help=H("total_water_mm"))
-        if not summary_f.empty and S["total_water_mm"] in summary_f.columns:
-            sm = summary_f.copy()
-            sm["Group"] = to_group(sm[S["type"]])
-            vw = (sm.groupby([S["village"], "Group"])[S["total_water_mm"]]
-                  .mean().reset_index())
-            fig9a = px.bar(vw, x=S["village"], y=S["total_water_mm"], color="Group",
-                barmode="group", color_discrete_map=GROUP_COLOR,
-                labels={S["total_water_mm"]: "Avg Irrigation Depth (mm)", S["village"]: ""}, height=300)
-            style_fig(fig9a, height=300)
-            st.plotly_chart(fig9a, use_container_width=True)
+                fig_treatment.update_layout(
+                    height=340,
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    showlegend=True,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.18,
+                        xanchor="center",
+                        x=0.5,
+                        font_size=9
+                    )
+                )
 
-    with c9b:
-        st.subheader("No. of Irrigations", help=H("irrigations_b"))
-        if not summary_f.empty and S["irrigations_b"] in summary_f.columns:
-            sm = summary_f.copy()
-            sm["Group"] = to_group(sm[S["type"]])
-            vi = (sm.groupby([S["village"], "Group"])[S["irrigations_b"]]
-                  .mean().reset_index())
-            fig9b = px.bar(vi, x=S["village"], y=S["irrigations_b"], color="Group",
-                barmode="group", color_discrete_map=GROUP_COLOR,
-                labels={S["irrigations_b"]: "Avg No. of Irrigations", S["village"]: ""}, height=300)
-            style_fig(fig9b, height=300)
-            st.plotly_chart(fig9b, use_container_width=True)
+                st.plotly_chart(
+                    fig_treatment,
+                    use_container_width=True
+                )
+
+        # --------------------------------------------------
+        # Control chart
+        # --------------------------------------------------
+            with cr:
+                st.subheader(
+                    "Hydrological Phase Distribution (Control)",
+                    help=H("phase")
+                )
+
+                st.caption(
+                    "Control · FL group then RL group"
+                )
+
+                fig_control = go.Figure()
+
+                if not pc_c.empty:
+                    fig_control.add_trace(go.Pie(
+                        labels=pc_c["phase"],
+                        values=pc_c["count"],
+                        sort=False,
+                        hole=0.62,
+                        domain=dict(x=[0, 1], y=[0, 1]),
+                        marker=dict(
+                            colors=[
+                                C["phase_control"].get(p, "#999")
+                                for p in pc_c["phase"]
+                            ],
+                            line=dict(color="white", width=1)
+                        ),
+                        textinfo="none",
+                        name="Control",
+                        hovertemplate=(
+                            "<b>Control</b><br>"
+                            "%{label}: %{percent}"
+                            "<extra></extra>"
+                        )
+                    ))
+
+                fig_control.update_layout(
+                    height=340,
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    showlegend=True,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.18,
+                        xanchor="center",
+                        x=0.5,
+                        font_size=9
+                    )
+                )
+
+                st.plotly_chart(
+                    fig_control,
+                    use_container_width=True
+                )
+
+    with st.expander("Irrigation Depth and No. of Irrigations by Village", expanded=False):
+        c9a, c9b = st.columns(2)
+        with c9a:
+            st.subheader("Irrigation Depth Distribution — Control and Treatment", help=H("total_water_mm"))
+            if not summary_f.empty and S["total_water_mm"] in summary_f.columns:
+                sm = summary_f.copy()
+                sm["Group"] = to_group(sm[S["type"]])
+                vw = (sm.groupby([S["village"], "Group"])[S["total_water_mm"]]
+                      .mean().reset_index())
+                fig9a = px.bar(vw, x=S["village"], y=S["total_water_mm"], color="Group",
+                    barmode="group", color_discrete_map=GROUP_COLOR,
+                    labels={S["total_water_mm"]: "Avg Irrigation Depth (mm)", S["village"]: ""}, height=300)
+                style_fig(fig9a, height=300)
+                st.plotly_chart(fig9a, use_container_width=True)
+
+        with c9b:
+            st.subheader("No. of Irrigations", help=H("irrigations_b"))
+            if not summary_f.empty and S["irrigations_b"] in summary_f.columns:
+                sm = summary_f.copy()
+                sm["Group"] = to_group(sm[S["type"]])
+                vi = (sm.groupby([S["village"], "Group"])[S["irrigations_b"]]
+                      .mean().reset_index())
+                fig9b = px.bar(vi, x=S["village"], y=S["irrigations_b"], color="Group",
+                    barmode="group", color_discrete_map=GROUP_COLOR,
+                    labels={S["irrigations_b"]: "Avg No. of Irrigations", S["village"]: ""}, height=300)
+                style_fig(fig9b, height=300)
+                st.plotly_chart(fig9b, use_container_width=True)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1148,263 +1438,214 @@ def tab_results_overview(master_f, summary_f, master, summary):
 # ═══════════════════════════════════════════════════════════════════
 
 def tab_compare_farmers(master, summary):
+    """Uses the full cohort (not the sidebar filters): a pair needs one farmer from each group."""
     st.markdown("### Compare Farmers")
-    st.caption("Pick one Treatment farmer and one Control farmer to compare their water-level trend and season metrics side by side.")
+    st.caption("Pick a Treatment farmer — the Control farmer defaults to the pairing in the Summary "
+               "(\"Default Control Pairing\") but can be changed freely.")
 
     if master.empty or summary.empty:
         st.warning("Both Master Analysis and Summary sheets are needed for this comparison.")
         return
 
+    is_t = to_group(master[M["type"]]) == "Treatment"
+    is_c = to_group(master[M["type"]]) == "Control"
+    if not is_t.any() or not is_c.any():
+        st.warning("Both Treatment and Control farmers are needed for this comparison.")
+        return
+
+    def _farmers(group_mask, village):
+        return sorted(master[group_mask & (master[M["village"]] == village)][M["farmer"]].dropna().unique())
+
+    vt_pool = sorted(master[is_t][M["village"]].dropna().unique())
+    vc_pool = sorted(master[is_c][M["village"]].dropna().unique())
+    c_home = master[is_c].drop_duplicates(M["farmer"]).set_index(M["farmer"])[M["village"]].to_dict()
+    pair_map = {}
+    if S["default_pair"] in summary.columns:
+        pair_map = dict(zip(summary[S["farmer"]], summary[S["default_pair"]].astype(str).str.strip()))
+
+    # Session-state plumbing for the default pairing. Callbacks run before the widgets are
+    # redrawn, which is the only point where their keyed values may be overwritten.
+    def _apply_pairing():
+        pair = pair_map.get(st.session_state.get("cmp_farmer_t"))
+        if pair in c_home:
+            st.session_state["cmp_village_c"] = c_home[pair]
+            st.session_state["cmp_farmer_c"] = pair
+
+    def _on_village_t():
+        pool = _farmers(is_t, st.session_state["cmp_village_t"])
+        st.session_state["cmp_farmer_t"] = pool[0] if pool else None
+        _apply_pairing()
+
+    def _on_village_c():
+        pool = _farmers(is_c, st.session_state["cmp_village_c"])
+        st.session_state["cmp_farmer_c"] = pool[0] if pool else None
+
+    if "cmp_village_t" not in st.session_state:
+        st.session_state["cmp_village_t"] = vt_pool[0]
+        st.session_state["cmp_farmer_t"] = (_farmers(is_t, vt_pool[0]) or [None])[0]
+        _apply_pairing()
+        st.session_state.setdefault("cmp_village_c", vc_pool[0])
+        st.session_state.setdefault("cmp_farmer_c", (_farmers(is_c, vc_pool[0]) or [None])[0])
+
+    # ── Subsection 1 — farmer pickers ────────────────────────────────
     cL, cR = st.columns(2)
     with cL:
         st.markdown("**Treatment Farmer**")
-        vt_pool = sorted(master[to_group(master[M["type"]]) == "Treatment"][M["village"]].dropna().unique())
-        if not vt_pool:
-            st.warning("No Treatment farmers found.")
-            return
-        village_t = st.selectbox("Village", vt_pool, key="cmp_village_t", help=H("village_filter"))
-        ft_pool = sorted(master[(master[M["village"]] == village_t) &
-                                 (to_group(master[M["type"]]) == "Treatment")][M["farmer"]].dropna().unique())
-        if not ft_pool:
-            st.warning("No Treatment farmers in this village.")
-            return
-        farmer_t = st.selectbox("Farmer", ft_pool, key="cmp_farmer_t", help=H("farmer"))
+        village_t = st.selectbox("Village", vt_pool, key="cmp_village_t",
+                                 on_change=_on_village_t, help=H("village_filter"))
+        farmer_t = st.selectbox("Farmer", _farmers(is_t, village_t), key="cmp_farmer_t",
+                                on_change=_apply_pairing, help=H("farmer"))
     with cR:
         st.markdown("**Control Farmer**")
-        vc_pool = sorted(master[to_group(master[M["type"]]) == "Control"][M["village"]].dropna().unique())
-        if not vc_pool:
-            st.warning("No Control farmers found.")
-            return
-        village_c = st.selectbox("Village", vc_pool, key="cmp_village_c", help=H("village_filter"))
-        fc_pool = sorted(master[(master[M["village"]] == village_c) &
-                                 (to_group(master[M["type"]]) == "Control")][M["farmer"]].dropna().unique())
-        if not fc_pool:
-            st.warning("No Control farmers in this village.")
-            return
-        farmer_c = st.selectbox("Farmer", fc_pool, key="cmp_farmer_c", help=H("farmer"))
+        village_c = st.selectbox("Village", vc_pool, key="cmp_village_c",
+                                 on_change=_on_village_c, help=H("village_filter"))
+        farmer_c = st.selectbox("Farmer", _farmers(is_c, village_c), key="cmp_farmer_c", help=H("farmer"))
+
+    default_c = pair_map.get(farmer_t)
+    if default_c in c_home:
+        if farmer_c == default_c:
+            st.caption(f"✅ {farmer_c} is the default Control pairing for {farmer_t}.")
+        else:
+            st.caption(f"✏️ Custom pairing — the default Control farmer for {farmer_t} is {default_c}.")
 
     fmt = master[master[M["farmer"]] == farmer_t].sort_values(M["date"])
     fmc = master[master[M["farmer"]] == farmer_c].sort_values(M["date"])
     fst = summary[summary[S["farmer"]] == farmer_t]
     fsc = summary[summary[S["farmer"]] == farmer_c]
-
-    st.subheader(f"Water Level Trend — {farmer_t} vs {farmer_c}", help=H("bgl"))
-    st.caption("Daily water level relative to soil surface. ▲ = irrigation reported.")
-    fig2 = go.Figure()
-    fig2.add_hrect(y0=-5, y1=10, fillcolor=C["safe_zone"], line_width=0)
-    fig2.add_trace(go.Scatter(x=fmt[M["date"]], y=fmt[M["bgl"]], name=f"{farmer_t} (Treatment)",
-        mode="lines", line=dict(color=C["treatment"], width=2.5),
-        hovertemplate="%{x|%d %b}<br>BGL: %{y:+.1f} cm<extra></extra>"))
-    fig2.add_trace(go.Scatter(x=fmc[M["date"]], y=fmc[M["bgl"]], name=f"{farmer_c} (Control)",
-        mode="lines", line=dict(color=C["control"], width=2.5),
-        hovertemplate="%{x|%d %b}<br>BGL: %{y:+.1f} cm<extra></extra>"))
-    irt = fmt[fmt[M["irrigated"]] == True]
-    irc = fmc[fmc[M["irrigated"]] == True]
-    if not irt.empty:
-        fig2.add_trace(go.Scatter(x=irt[M["date"]], y=irt[M["bgl"]], mode="markers",
-            name="Irrigation (Treatment)",
-            marker=dict(symbol="triangle-up", size=9, color=C["treatment"], line=dict(color="white", width=1))))
-    if not irc.empty:
-        fig2.add_trace(go.Scatter(x=irc[M["date"]], y=irc[M["bgl"]], mode="markers",
-            name="Irrigation (Control)",
-            marker=dict(symbol="triangle-up", size=9, color=C["control"], line=dict(color="white", width=1))))
-    fig2.add_hline(y=0, line_dash="dash", line_color="#999", line_width=1)
-    fig2.update_layout(yaxis=dict(title="BGL (cm)"))
-    style_fig(fig2, height=340)
-    st.plotly_chart(fig2, use_container_width=True)
-
     rowt = fst.iloc[0] if not fst.empty else None
     rowc = fsc.iloc[0] if not fsc.empty else None
 
+    # ── Subsection 2 — water level trend ─────────────────────────────
+    with st.expander(f"Water Level Trend — {farmer_t} vs {farmer_c}", expanded=True):
+        st.caption("Daily water level relative to soil surface. ▲ = irrigation reported.")
+        fig2 = go.Figure()
+        fig2.add_hrect(y0=-5, y1=10, fillcolor=C["safe_zone"], line_width=0)
+        fig2.add_trace(go.Scatter(x=fmt[M["date"]], y=fmt[M["bgl"]], name=f"{farmer_t} (Treatment)",
+            mode="lines", line=dict(color=C["treatment"], width=2.5),
+            hovertemplate="%{x|%d %b}<br>BGL: %{y:+.1f} cm<extra></extra>"))
+        fig2.add_trace(go.Scatter(x=fmc[M["date"]], y=fmc[M["bgl"]], name=f"{farmer_c} (Control)",
+            mode="lines", line=dict(color=C["control"], width=2.5),
+            hovertemplate="%{x|%d %b}<br>BGL: %{y:+.1f} cm<extra></extra>"))
+        irt = fmt[fmt[M["irrigated"]] == True]
+        irc = fmc[fmc[M["irrigated"]] == True]
+        if not irt.empty:
+            fig2.add_trace(go.Scatter(x=irt[M["date"]], y=irt[M["bgl"]], mode="markers",
+                name="Irrigation (Treatment)",
+                marker=dict(symbol="triangle-up", size=9, color=C["treatment"], line=dict(color="white", width=1))))
+        if not irc.empty:
+            fig2.add_trace(go.Scatter(x=irc[M["date"]], y=irc[M["bgl"]], mode="markers",
+                name="Irrigation (Control)",
+                marker=dict(symbol="triangle-up", size=9, color=C["control"], line=dict(color="white", width=1))))
+        fig2.add_hline(y=0, line_dash="dash", line_color="#999", line_width=1)
+        fig2.update_layout(yaxis=dict(title="Daily water level vs surface (cm)"))
+        style_fig(fig2, height=340)
+        st.plotly_chart(fig2, use_container_width=True)
+
+    # ── Subsection 3 — build-your-own chart (opens on a default graph) ─
+    with st.expander("Build your own chart", expanded=True):
+        st.caption(f"Explore {farmer_t} (Treatment) and {farmer_c} (Control) — daily readings or season totals.")
+        pair_master = pd.concat([fmt, fmc])
+        pair_summary = pd.concat([fst, fsc])
+        chart_builder("cmp_chart", {
+            "Daily readings": dict(
+                builder_daily(pair_master),
+                default=dict(chart="Line", x=DAS_COL, y=M["cum_irrig"], color="Group", agg="None (raw values)")),
+            "Season summary": dict(
+                builder_summary(pair_summary),
+                default=dict(chart="Bar", x=S["farmer"], y=S["total_water_mm"], color="Group", agg="None (raw values)")),
+        })
+
+    # ── Subsection 4 — pair KPIs (Control vs Treatment) ──────────────
     def _num(row, key):
         if row is None: return None
         v = row.get(S[key])
         return float(v) if pd.notna(v) else None
 
-    st.divider()
-    st.markdown("#### Key Performance Indicators")
-    st.caption(f"{farmer_c} (Control) vs {farmer_t} (Treatment) — see the Playbook for Measuring Water Level Using Pani Pipes for the calculation method.")
-
     t_mm, c_mm = _num(rowt, "total_water_mm"), _num(rowc, "total_water_mm")
-    t_m3, c_m3 = _num(rowt, "total_water_m3"), _num(rowc, "total_water_m3")
-    pot_m3 = _num(rowt, "savings_m3")
+    t_pct, c_pct = _num(rowt, "savings_pct"), _num(rowc, "savings_pct")
+    t_ac, c_ac = _num(rowt, "land_area"), _num(rowc, "land_area")
 
-    water_savings_mm  = (c_mm - t_mm) if t_mm is not None and c_mm is not None else None
-    water_savings_pct = (water_savings_mm / c_mm * 100) if water_savings_mm is not None and c_mm else None
-    actual_vol_savings = (c_m3 - t_m3) if t_m3 is not None and c_m3 is not None else None
+    diff_mm = (c_mm - t_mm) if t_mm is not None and c_mm is not None else None
+    sav_pct = ((c_pct - t_pct) / c_pct * 100) if t_pct is not None and c_pct else None
+    actual_m3 = (diff_mm * t_ac * 4046 / 1000) if diff_mm is not None and t_ac is not None else None
+    potential_m3 = (diff_mm * c_ac * 4046 / 1000) if diff_mm is not None and c_ac is not None else None
 
-    metric_card(st.container(), "Water Savings (mm)", fmt_or_dash(water_savings_mm, "{:+,.0f} mm"),
-                f"{farmer_c} minus {farmer_t}", "savings_mm", C["accent"])
-    metric_card(st.container(), "Water Savings (%)", fmt_or_dash(water_savings_pct, "{:+.1f}%"),
-                f"{farmer_c} minus {farmer_t}", "savings_pct", C["accent"])
-    metric_card(st.container(), "Actual Volumetric Savings (m³)", fmt_or_dash(actual_vol_savings, "{:+,.0f} m³"),
-                f"{farmer_c} minus {farmer_t}", "savings_m3", C["accent"])
-    metric_card(st.container(), "Potential Volumetric Savings (m³)", fmt_or_dash(pot_m3, "{:,.0f} m³"),
-                f"{farmer_t} vs the 1100mm TNAU baseline", "savings_m3", C["treatment"])
+    with st.expander("Key Performance Indicators — Control vs Treatment", expanded=True):
+        st.caption(f"{farmer_c} (Control) compared with {farmer_t} (Treatment). "
+                   "Depths are each farmer's Total Irrigated Water Depth (mm); areas are Size of Monitoring Field (acres).")
+        k1, k2, k3, k4 = st.columns(4)
+        metric_card(k1, "Water Savings (mm)", fmt_or_dash(diff_mm, "{:+,.0f} mm"),
+                    "Control − Treatment", "savings_mm", C["accent"])
+        metric_card(k2, "Water Savings (%)", fmt_or_dash(sav_pct, "{:+.1f}%"),
+                    "(Control % − Treatment %) ÷ Control % × 100", "savings_pct", C["accent"])
+        metric_card(k3, "Actual Volumetric Saving (m³)", fmt_or_dash(actual_m3, "{:+,.0f} m³"),
+                    "(Control − Treatment) × Treatment area × 4046 ÷ 1000", "savings_m3", C["accent"])
+        metric_card(k4, "Potential Volumetric Savings (m³)", fmt_or_dash(potential_m3, "{:+,.0f} m³"),
+                    "(Control − Treatment) × Control area × 4046 ÷ 1000", "savings_m3", C["treatment"])
 
-    st.divider()
-    st.markdown("#### Season Metrics — Side by Side")
+    # ── Subsection 5 — side-by-side scoreboards / tables ─────────────
+    st.markdown("### Side by Side")
+    hl, hr = st.columns(2)
+    hl.markdown(f"<div style='border-bottom:3px solid {C['treatment']};font-weight:700;"
+                f"color:{C['treatment']};padding-bottom:2px;'>Treatment Farmer — {farmer_t}</div>",
+                unsafe_allow_html=True)
+    hr.markdown(f"<div style='border-bottom:3px solid {C['control']};font-weight:700;"
+                f"color:{C['control']};padding-bottom:2px;'>Control Farmer — {farmer_c}</div>",
+                unsafe_allow_html=True)
+    for kind in ["kpi", "productivity", "water", "irrigation", "remarks"]:
+        left, right = st.columns(2)
+        title = "Remarks" if kind == "remarks" else SECTION_TITLES[kind]
+        opened = kind in ("kpi", "productivity")
+        for col, who, row, accent in [(left, "Treatment Farmer", rowt, C["treatment"]),
+                                      (right, "Control Farmer", rowc, C["control"])]:
+            with col:
+                with st.expander(f"{title} — {who}", expanded=opened):
+                    if row is None:
+                        st.info("No Summary row for this farmer.")
+                    elif kind == "remarks":
+                        kv_table(info_rows(row, REMARKS_SPEC))
+                    else:
+                        render_section(kind, row, accent)
 
-    def fmt_val(row, key, fs="{:.1f}"):
-        if row is None: return "—"
-        v = row.get(S[key])
-        return fs.format(v) if pd.notna(v) else "—"
-
-    metrics = [
-        ("Drying Events", "drying_events", "{:.0f}"),
-        ("Irrigations (Reported)", "irrigations_a", "{:.0f}"),
-        ("Irrigations (Calculated)", "irrigations_b", "{:.0f}"),
-        ("Days Above Surface", "days_above", "{:.0f}"),
-        ("Days Below Surface", "days_below", "{:.0f}"),
-        ("Very Dry Days (>10cm below surface)", "min_wl_events", "{:.0f}"),
-        ("Max Dry Period Duration (days)", "max_dry_duration", "{:.0f}"),
-        ("Total Water Added (mm)", "total_water_mm", "{:,.0f}"),
-        ("Total Water Recharged (mm)", "total_recharged_mm", "{:,.0f}"),
-        ("Actual Water Savings (%)", "savings_pct", "{:.1f}"),
-        ("Actual Water Savings (mm)", "savings_mm", "{:,.0f}"),
-        ("Actual Vol. Water Saving (m³)", "savings_m3", "{:,.0f}"),
-    ]
-    for label, key, fs in metrics:
-        cc1, cc2 = st.columns(2)
-        with cc1:
-            with st.container(border=True):
-                st.markdown(f"<div style='height:4px;background:{C['treatment']};border-radius:3px;"
-                             f"margin:-1rem -1rem 0.6rem -1rem;'></div>", unsafe_allow_html=True)
-                st.metric(f"{label} — {farmer_t}", fmt_val(rowt, key, fs), help=H(key))
-        with cc2:
-            with st.container(border=True):
-                st.markdown(f"<div style='height:4px;background:{C['control']};border-radius:3px;"
-                             f"margin:-1rem -1rem 0.6rem -1rem;'></div>", unsafe_allow_html=True)
-                st.metric(f"{label} — {farmer_c}", fmt_val(rowc, key, fs), help=H(key))
-
-    st.divider()
-    st.markdown("#### Performance Index")
-    st.caption("Each metric is scaled 0–100 against the highest value seen among all farmers in the study, so the two farmers can be compared on one chart regardless of units. Negative values are floored at 0.")
-
-    if rowt is not None and rowc is not None:
-        radar_metrics = [
-            ("Drying Events", "drying_events"),
-            ("Days Below Surface", "days_below"),
-            ("Irrigations Reported", "irrigations_a"),
-            ("Water Savings %", "savings_pct"),
-            ("Water Added (mm)", "total_water_mm"),
-        ]
-        cats, vt, vc = [], [], []
-        for label, key in radar_metrics:
-            col = S[key]
-            if col not in summary.columns: continue
-            mx = summary[col].max()
-            if pd.isna(mx) or mx <= 0: continue
-            tv = rowt.get(col)
-            cv = rowc.get(col)
-            cats.append(label)
-            vt.append(max(0.0, float(tv) / mx * 100) if pd.notna(tv) else 0)
-            vc.append(max(0.0, float(cv) / mx * 100) if pd.notna(cv) else 0)
-        if cats:
-            figr = go.Figure()
-            figr.add_trace(go.Scatterpolar(r=vt + [vt[0]], theta=cats + [cats[0]],
-                name=f"{farmer_t} (Treatment)", fill="toself",
-                line=dict(color=C["treatment"]), opacity=0.8))
-            figr.add_trace(go.Scatterpolar(r=vc + [vc[0]], theta=cats + [cats[0]],
-                name=f"{farmer_c} (Control)", fill="toself",
-                line=dict(color=C["control"]), opacity=0.8))
-            figr.update_layout(
-                polar=dict(bgcolor=C["surface"],
-                           radialaxis=dict(visible=True, range=[0, 100], gridcolor=C["grid"])),
-                height=420, paper_bgcolor="rgba(0,0,0,0)", font=dict(color=C["text"]),
-                showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-            st.plotly_chart(figr, use_container_width=True)
-        else:
-            st.info("Not enough season data to build the performance index for this pair.")
-
-
-# ═══════════════════════════════════════════════════════════════════
-# TAB 3 — FARMER SUMMARY TABLE
-# ═══════════════════════════════════════════════════════════════════
-
-def tab_farmer_summary(summary):
-    st.markdown("### Farmer Season Summary")
-    if summary.empty:
-        st.warning("Summary sheet not loaded.")
-        return
-
-    cs, cv, ct = st.columns(3)
-    with cs: search = st.text_input("🔍 Search farmer", help=H("farmer"))
-    with cv:
-        vo = ["All"] + sorted(summary[S["village"]].dropna().unique())
-        sv = st.selectbox("Village", vo, help=H("village_filter"))
-    with ct:
-        to = ["All", "Treatment", "Control"]
-        st_t = st.selectbox("Type", to, help=H("type_filter"))
-
-    ds = summary.copy()
-    if search: ds = ds[ds[S["farmer"]].str.contains(search, case=False, na=False)]
-    if sv != "All": ds = ds[ds[S["village"]] == sv]
-    if st_t == "Treatment": ds = ds[to_group(ds[S["type"]]) == "Treatment"]
-    elif st_t == "Control": ds = ds[to_group(ds[S["type"]]) == "Control"]
-
-    st.info(f"Showing **{len(ds)}** farmers")
-
-    disp = [S["farmer"], S["village"], S["type"], S["land_area"], S["days_monitored"],
-            S["missing_days"], S["drying_events"], S["days_above"], S["days_below"],
-            S["dry_days"], S["irrigations_a"], S["irrigations_b"],
-            S["total_water_mm"], S["total_water_m3"], S["avg_gopal_cm"]]
-    disp = [c for c in disp if c in ds.columns]
-
-    ds_view = ds[disp].reset_index(drop=True).copy()
-    ds_view[S["type"]] = ds_view[S["type"]].map(relabel_type)
-
-    key_lookup = {v: k for k, v in S.items()}
-    col_config = {}
-    for c in disp:
-        k = key_lookup.get(c)
-        tip = H(k) if k else ""
-        if c == S["total_water_m3"]:
-            col_config[c] = st.column_config.NumberColumn("Water Added (m³)", format="%.1f", help=tip)
-        elif c == S["avg_gopal_cm"]:
-            col_config[c] = st.column_config.NumberColumn("Gopal (cm)", format="%.2f", help=tip)
-        elif tip:
-            col_config[c] = st.column_config.Column(help=tip)
-
-    st.dataframe(ds_view, use_container_width=True, height=420, column_config=col_config)
-
-    st.divider()
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Top 15 — Irrigation Depth (mm)", help=H("total_water_mm"))
-        st.caption("Farmers with the deepest total irrigation this season")
-        if S["total_water_mm"] in ds.columns:
-            dsg = ds.copy()
-            dsg["Group"] = to_group(dsg[S["type"]])
-            top = (dsg[[S["farmer"], "Group", S["total_water_mm"]]].dropna()
-                   .sort_values(S["total_water_mm"], ascending=True).tail(15))
-            fig = px.bar(top, y=S["farmer"], x=S["total_water_mm"], color="Group",
-                orientation="h", color_discrete_map=GROUP_COLOR,
-                height=380, labels={S["total_water_mm"]: "Irrigation Depth (mm)", S["farmer"]: ""})
-            style_fig(fig, height=380)
-            fig.update_layout(yaxis=dict(tickfont=dict(size=9)))
-            st.plotly_chart(fig, use_container_width=True)
-
-    with c2:
-        st.subheader("Bottom 15 — Irrigation Depth (mm)", help=H("total_water_mm"))
-        st.caption("Farmers with the shallowest total irrigation this season")
-        if S["total_water_mm"] in ds.columns:
-            dsg = ds.copy()
-            dsg["Group"] = to_group(dsg[S["type"]])
-            bottom = (dsg[[S["farmer"], "Group", S["total_water_mm"]]].dropna()
-                      .sort_values(S["total_water_mm"], ascending=True).head(15))
-            fig2 = px.bar(bottom, y=S["farmer"], x=S["total_water_mm"], color="Group",
-                orientation="h", color_discrete_map=GROUP_COLOR,
-                height=380, labels={S["total_water_mm"]: "Irrigation Depth (mm)", S["farmer"]: ""})
-            style_fig(fig2, height=380)
-            fig2.update_layout(yaxis=dict(tickfont=dict(size=9)))
-            st.plotly_chart(fig2, use_container_width=True)
-
-    csv = ds.to_csv(index=False).encode("utf-8")
-    st.download_button("📥 Download CSV", data=csv,
-                       file_name="awd_summary.csv", mime="text/csv")
+    # ── Performance index (radar) ────────────────────────────────────
+    with st.expander("Performance Index", expanded=False):
+        st.caption("Each metric is scaled 0–100 against the highest value seen among all farmers in the study, so the two farmers can be compared on one chart regardless of units. Negative values are floored at 0.")
+        if rowt is not None and rowc is not None:
+            radar_metrics = [
+                ("Drying Events", "drying_events"),
+                ("Days Below Surface", "days_below"),
+                ("Irrigations Reported", "irrigations_a"),
+                ("Water Savings %", "savings_pct"),
+                ("Water Added (mm)", "total_water_mm"),
+            ]
+            cats, vt, vc = [], [], []
+            for label, key in radar_metrics:
+                col = S[key]
+                if col not in summary.columns: continue
+                mx = summary[col].max()
+                if pd.isna(mx) or mx <= 0: continue
+                tv = rowt.get(col)
+                cv = rowc.get(col)
+                cats.append(label)
+                vt.append(max(0.0, float(tv) / mx * 100) if pd.notna(tv) else 0)
+                vc.append(max(0.0, float(cv) / mx * 100) if pd.notna(cv) else 0)
+            if cats:
+                figr = go.Figure()
+                figr.add_trace(go.Scatterpolar(r=vt + [vt[0]], theta=cats + [cats[0]],
+                    name=f"{farmer_t} (Treatment)", fill="toself",
+                    line=dict(color=C["treatment"]), opacity=0.8))
+                figr.add_trace(go.Scatterpolar(r=vc + [vc[0]], theta=cats + [cats[0]],
+                    name=f"{farmer_c} (Control)", fill="toself",
+                    line=dict(color=C["control"]), opacity=0.8))
+                figr.update_layout(
+                    polar=dict(bgcolor=C["surface"],
+                               radialaxis=dict(visible=True, range=[0, 100], gridcolor=C["grid"])),
+                    height=420, paper_bgcolor="rgba(0,0,0,0)", font=dict(color=C["text"]),
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                st.plotly_chart(figr, use_container_width=True)
+            else:
+                st.info("Not enough season data to build the performance index for this pair.")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1433,89 +1674,108 @@ def tab_individual_farmer(master, summary):
 
     fm = master[master[M["farmer"]] == sel].copy()
     sm = summary[summary[S["farmer"]] == sel] if not summary.empty else pd.DataFrame()
+    row = sm.iloc[0] if not sm.empty else None
+    accent = GROUP_COLOR.get(st_disp, C["accent"])
 
-    if not sm.empty:
-        row = sm.iloc[0]
-        st.markdown("#### Season Summary")
-        with st.container(key="deep_dive_season_summary"):
-            c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
-            irr_a_val = row.get(S["irrigations_a"])
-            irr_b_val = row.get(S["irrigations_b"])
-            pairs = [
-                (c1, "Village", str(row.get(S["village"], "—")), "", "village"),
-                (c2, "Type", relabel_type(str(row.get(S["type"], "—"))), "", "type"),
-                (c3, "Land (ac)", str(row.get(S["land_area"], "—")), "", "land_area"),
-                (c4, "Days Mon.", str(int(row.get(S["days_monitored"], 0))) if pd.notna(row.get(S["days_monitored"])) else "—", "", "days_monitored"),
-                (c5, "Dry Events", str(int(row.get(S["drying_events"], 0))) if pd.notna(row.get(S["drying_events"])) else "—", "≥3 days", "drying_events"),
-                (c6, "Irrig. Reported", str(int(irr_a_val)) if pd.notna(irr_a_val) else "—", "field-observed", "irrigations_a"),
-                (c7, "Irrig. Calculated", str(int(irr_b_val)) if pd.notna(irr_b_val) else "—", "from readings", "irrigations_b"),
-                (c8, "Water (m³)", f"{row.get(S['total_water_m3'], 0):.1f}" if pd.notna(row.get(S["total_water_m3"])) else "—", "added", "total_water_m3"),
-            ]
-            for col, lab, val, sub, key in pairs:
-                col.metric(lab, val, sub or None, help=H(key))
-        st.divider()
+    # ── Subsection 1 — season summary + scoreboards ──────────────────
+    with st.expander(f"Season Summary — {sel}", expanded=True):
+        if row is None:
+            st.info("No Summary row found for this farmer.")
+        else:
+            with st.container(key="deep_dive_season_summary"):
+                c1, c2, c3, c4, c5 = st.columns(5)
+                days_mon = row.get(S["days_monitored"])
+                dry_ev = row.get(S["drying_events"])
+                pairs = [
+                    (c1, "Village", str(row.get(S["village"], "—")), "village"),
+                    (c2, "Type", relabel_type(str(row.get(S["type"], "—"))), "type"),
+                    (c3, "Land (ac)", str(row.get(S["land_area"], "—")), "land_area"),
+                    (c4, "Days Monitored", str(int(days_mon)) if pd.notna(days_mon) else "—", "days_monitored"),
+                    (c5, "Dry Events", str(int(dry_ev)) if pd.notna(dry_ev) else "—", "drying_events"),
+                ]
+                for col, lab, val, key in pairs:
+                    col.metric(lab, val, help=H(key))
 
-    st.subheader(f"Daily Water Level — {sel}", help=H("pp_reading"))
-    st.caption("PP Reading over time · ▲ = irrigation reported · ◇ = irrigation calculated (BGL rose >2cm) · phase bars below")
+    if row is not None:
+        with st.expander("Key Performance Index", expanded=True):
+            render_section("kpi", row, accent, ncols=3)
+        with st.expander("Productivity", expanded=True):
+            render_section("productivity", row, accent, ncols=5)
+        with st.expander("Information", expanded=False):
+            kv_table(info_rows(row))
+        with st.expander("Water Usage", expanded=True):
+            render_section("water", row, accent, ncols=4)
+        with st.expander("Irrigation", expanded=False):
+            render_section("irrigation", row, accent)
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28],
-        subplot_titles=("PP Reading (cm)", "Phase"), vertical_spacing=0.05)
-    fig.add_hrect(y0=5, y1=25, row=1, col=1, fillcolor=C["safe_zone"], line_width=0)
-    fig.add_trace(go.Scatter(x=fm[M["date"]], y=fm[M["pp_reading"]], name="PP Reading",
-        mode="lines+markers", line=dict(color=C["treatment"], width=2.5), marker=dict(size=4),
-        hovertemplate="<b>%{x|%d %b %Y}</b><br>PP: %{y:.1f} cm<extra></extra>"), row=1, col=1)
-    fig.add_hline(y=15, line_dash="dash", line_color=C["accent"], line_width=1.5, row=1, col=1,
-        annotation_text="Surface", annotation_font_color=C["accent"], annotation_position="bottom right")
-    fig.add_hline(y=25, line_dash="dot", line_color=C["control"], line_width=1, row=1, col=1,
-        annotation_text="Dry (25cm)", annotation_font_color=C["control"], annotation_position="top right")
+    # ── Subsection 2 — daily water level chart ───────────────────────
+    with st.expander(f"Daily Water Level — {sel}", expanded=True):
+        st.caption("Daily water level reading over time · ▲ = irrigation reported · ◇ = irrigation calculated (water level rose >2cm) · phase bars below")
 
-    ir = fm[fm[M["irrigated"]] == True]
-    if not ir.empty:
-        fig.add_trace(go.Scatter(x=ir[M["date"]], y=ir[M["pp_reading"]], name="Irrigation (Reported)",
-            mode="markers", marker=dict(symbol="triangle-up", size=11, color=C["accent"],
-            line=dict(color="white", width=1)),
-            hovertemplate="<b>Irrigation (Reported)</b><br>%{x|%d %b}<br>PP: %{y:.1f}<extra></extra>"), row=1, col=1)
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28],
+            subplot_titles=(LBL_DWL, "Phase"), vertical_spacing=0.05)
+        fig.add_hrect(y0=5, y1=25, row=1, col=1, fillcolor=C["safe_zone"], line_width=0)
+        fig.add_trace(go.Scatter(x=fm[M["date"]], y=fm[M["pp_reading"]], name="Daily water level reading",
+            mode="lines+markers", line=dict(color=C["treatment"], width=2.5), marker=dict(size=4),
+            hovertemplate="<b>%{x|%d %b %Y}</b><br>Water level reading: %{y:.1f} cm<extra></extra>"), row=1, col=1)
+        fig.add_hline(y=15, line_dash="dash", line_color=C["accent"], line_width=1.5, row=1, col=1,
+            annotation_text="Surface", annotation_font_color=C["accent"], annotation_position="bottom right")
+        fig.add_hline(y=25, line_dash="dot", line_color=C["control"], line_width=1, row=1, col=1,
+            annotation_text="Dry (25cm)", annotation_font_color=C["control"], annotation_position="top right")
 
-    if M["irrig_calc"] in fm.columns:
-        irc = fm[fm[M["irrig_calc"]] == True]
-        if not irc.empty:
-            fig.add_trace(go.Scatter(x=irc[M["date"]], y=irc[M["pp_reading"]], name="Irrigation (Calculated)",
-                mode="markers", marker=dict(symbol="diamond", size=8, color=C["treatment"],
+        ir = fm[fm[M["irrigated"]] == True]
+        if not ir.empty:
+            fig.add_trace(go.Scatter(x=ir[M["date"]], y=ir[M["pp_reading"]], name="Irrigation (Reported)",
+                mode="markers", marker=dict(symbol="triangle-up", size=11, color=C["accent"],
                 line=dict(color="white", width=1)),
-                hovertemplate="<b>Irrigation (Calculated)</b><br>%{x|%d %b}<br>PP: %{y:.1f}<extra></extra>"), row=1, col=1)
+                hovertemplate="<b>Irrigation (Reported)</b><br>%{x|%d %b}<br>Level: %{y:.1f}<extra></extra>"), row=1, col=1)
 
-    for ph in PHASE_ORDER:
-        sub = fm[fm[M["phase"]] == ph]
-        if sub.empty: continue
-        fig.add_trace(go.Bar(x=sub[M["date"]], y=[1] * len(sub), name=ph,
-            marker_color=C["phase"].get(ph, "#999"),
-            hovertemplate=f"<b>{ph}</b><br>%{{x|%d %b}}<extra></extra>"), row=2, col=1)
+        if M["irrig_calc"] in fm.columns:
+            irc = fm[fm[M["irrig_calc"]] == True]
+            if not irc.empty:
+                fig.add_trace(go.Scatter(x=irc[M["date"]], y=irc[M["pp_reading"]], name="Irrigation (Calculated)",
+                    mode="markers", marker=dict(symbol="diamond", size=8, color=C["treatment"],
+                    line=dict(color="white", width=1)),
+                    hovertemplate="<b>Irrigation (Calculated)</b><br>%{x|%d %b}<br>Level: %{y:.1f}<extra></extra>"), row=1, col=1)
 
-    fig.update_layout(height=510, margin=dict(l=10, r=10, t=30, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor=C["surface"], font=dict(color=C["text"]),
-        barmode="stack",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font_size=10),
-        yaxis=dict(title="PP Reading (cm)", autorange="reversed", showgrid=True, gridcolor=C["grid"]),
-        yaxis2=dict(showticklabels=False, showgrid=False),
-        xaxis2=dict(showgrid=True, gridcolor=C["grid"]))
-    st.plotly_chart(fig, use_container_width=True)
+        for ph in PHASE_ORDER:
+            sub = fm[fm[M["phase"]] == ph]
+            if sub.empty: continue
+            fig.add_trace(go.Bar(x=sub[M["date"]], y=[1] * len(sub), name=ph,
+                marker_color=C["phase"].get(ph, "#999"),
+                hovertemplate=f"<b>{ph}</b><br>%{{x|%d %b}}<extra></extra>"), row=2, col=1)
 
-    st.divider()
+        fig.update_layout(height=510, margin=dict(l=10, r=10, t=30, b=10),
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor=C["surface"], font=dict(color=C["text"]),
+            barmode="stack",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font_size=10),
+            yaxis=dict(title=LBL_DWL, autorange="reversed", showgrid=True, gridcolor=C["grid"]),
+            yaxis2=dict(showticklabels=False, showgrid=False),
+            xaxis2=dict(showgrid=True, gridcolor=C["grid"]))
+        st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Phase Distribution", help=H("phase"))
-    pc = fm[M["phase"]].value_counts().reset_index()
-    pc.columns = ["phase", "count"]
-    pc["phase"] = pd.Categorical(pc["phase"], categories=PHASE_ORDER, ordered=True)
-    pc = pc.sort_values("phase").dropna(subset=["phase"])
-    cols_l = [C["phase"].get(p, "#999") for p in pc["phase"]]
-    fig_p = go.Figure(go.Pie(labels=pc["phase"], values=pc["count"], hole=0.5, sort=False,
-        marker=dict(colors=cols_l, line=dict(color="white", width=2)),
-        textinfo="label+percent", textfont_size=10))
-    fig_p.update_layout(height=320, margin=dict(l=0, r=0, t=0, b=0),
-        paper_bgcolor="rgba(0,0,0,0)", showlegend=False)
-    st.plotly_chart(fig_p, use_container_width=True)
+    # ── Subsection 3 — build-your-own chart (opens on a default graph) ─
+    with st.expander("Build your own chart", expanded=True):
+        st.caption(f"Pick a chart type, axes, colour and filters to explore {sel}'s daily readings.")
+        chart_builder("ind_chart", {"Daily readings": dict(
+            builder_daily(fm),
+            default=dict(chart="Line", x=M["date"], y=M["cum_irrig"], color="(none)", agg="None (raw values)"))})
 
-    with st.expander("📋 Raw daily data"):
+    # ── Extras kept from the earlier layout (collapsed to keep the page clean) ──
+    with st.expander("Phase Distribution", expanded=False):
+        pc = fm[M["phase"]].value_counts().reset_index()
+        pc.columns = ["phase", "count"]
+        pc["phase"] = pd.Categorical(pc["phase"], categories=PHASE_ORDER, ordered=True)
+        pc = pc.sort_values("phase").dropna(subset=["phase"])
+        cols_l = [C["phase"].get(p, "#999") for p in pc["phase"]]
+        fig_p = go.Figure(go.Pie(labels=pc["phase"], values=pc["count"], hole=0.5, sort=False,
+            marker=dict(colors=cols_l, line=dict(color="white", width=2)),
+            textinfo="label+percent", textfont_size=10))
+        fig_p.update_layout(height=320, margin=dict(l=0, r=0, t=0, b=0),
+            paper_bgcolor="rgba(0,0,0,0)", showlegend=False)
+        st.plotly_chart(fig_p, use_container_width=True)
+
+    with st.expander("📋 Raw daily data", expanded=False):
         show = [c for c in [M["date"], M["das"], M["pp_reading"], M["bgl"],
                 M["fl_rl"], M["phase"], M["change_wl"], M["event"],
                 M["gopal_cm"], M["cum_irrig"], M["irrigated"], M["irrig_calc"],
@@ -1523,7 +1783,7 @@ def tab_individual_farmer(master, summary):
         col_config = {
             M["date"]: st.column_config.DateColumn(format="DD MMM YYYY", help=H("date")),
             M["das"]: st.column_config.Column("Days After Sowing", help=H("das")),
-            M["pp_reading"]: st.column_config.Column(help=H("pp_reading")),
+            M["pp_reading"]: st.column_config.Column(LBL_DWL, help=H("pp_reading")),
             M["bgl"]: st.column_config.NumberColumn("BGL", format="%+.1f", help=H("bgl")),
             M["fl_rl"]: st.column_config.Column(help=H("fl_rl")),
             M["phase"]: st.column_config.Column(help=H("phase")),
@@ -1635,6 +1895,13 @@ def apply_css():
         div[data-testid="stExpander"] {{ background:{C['surface']};border-radius:8px;
             border:1px solid {C['border']}; }}
         h1,h2,h3,h4 {{ color:{C['text']}; }}
+        div[data-testid="stExpander"] [data-testid="stMetricLabel"] {{ min-height:2.6em;align-items:flex-start; }}
+        div[data-testid="stExpander"] [data-testid="stMetricLabel"] * {{ white-space:normal !important;
+            overflow:visible !important;text-overflow:clip !important;line-height:1.25; }}
+        div[data-testid="stExpander"] [data-testid="stMetricValue"] {{ font-size:1.35rem; }}
+        div[data-testid="stExpander"] [data-testid="stMetricDelta"] {{ font-size:0.72rem; }}
+        div[data-testid="stExpander"] [data-testid="stMetricDelta"] svg {{ display:none; }}
+        div[data-testid="stExpander"] [data-testid="stMetricDelta"] * {{ white-space:normal !important;overflow:visible !important; }}
         .st-key-deep_dive_season_summary div[data-testid="stMetricValue"] {{ font-size:16px; }}
         .st-key-deep_dive_season_summary div[data-testid="stMetricLabel"] {{ font-size:12px; }}
         </style>
@@ -1659,18 +1926,16 @@ def main():
 
     master_f, summary_f = render_sidebar(master, summary)
 
-    t1, t2, t3, t4, t5 = st.tabs([
+    t1, t2, t3, t4 = st.tabs([
         "📊 Results Overview",
         "👤 Individual Farmer Results",
         "⚖️ Compare Farmers",
-        "📋 Summary",
         "🔍 Get Data",
     ])
     with t1: tab_results_overview(master_f, summary_f, master, summary)
     with t2: tab_individual_farmer(master_f, summary_f)
-    with t3: tab_compare_farmers(master_f, summary_f)
-    with t4: tab_farmer_summary(summary_f)
-    with t5: tab_explorer(master_f, summary_f)
+    with t3: tab_compare_farmers(master, summary)
+    with t4: tab_explorer(master_f, summary_f)
 
 
 if __name__ == "__main__":
