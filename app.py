@@ -1437,8 +1437,7 @@ def tab_results_overview(master_f, summary_f, master, summary):
 def tab_compare_farmers(master, summary):
     """Uses the full cohort (not the sidebar filters): a pair needs one farmer from each group."""
     st.markdown("### Compare Farmers")
-    st.caption("Pick a Treatment farmer — the Control farmer defaults to the pairing in the Summary "
-               "(\"Default Control Pairing\") but can be changed freely.")
+    st.caption("Pick a Treatment farmer")
 
     if master.empty or summary.empty:
         st.warning("Both Master Analysis and Summary sheets are needed for this comparison.")
@@ -1501,9 +1500,9 @@ def tab_compare_farmers(master, summary):
     default_c = pair_map.get(farmer_t)
     if default_c in c_home:
         if farmer_c == default_c:
-            st.caption(f"✅ {farmer_c} is the default Control pairing for {farmer_t}.")
+            st.caption(f" {farmer_c} is the default Control pairing for {farmer_t}.")
         else:
-            st.caption(f"✏️ Custom pairing — the default Control farmer for {farmer_t} is {default_c}.")
+            st.caption(f" Custom pairing — the default Control farmer for {farmer_t} is {default_c}.")
 
     fmt = master[master[M["farmer"]] == farmer_t].sort_values(M["date"])
     fmc = master[master[M["farmer"]] == farmer_c].sort_values(M["date"])
@@ -1572,13 +1571,13 @@ def tab_compare_farmers(master, summary):
                    "")
         k1, k2, k3, k4 = st.columns(4)
         metric_card(k1, "Water Savings (mm)", fmt_or_dash(diff_mm, "{:+,.0f} mm"),
-                    "Control − Treatment", "savings_mm", C["accent"])
+                    "", "savings_mm", C["accent"])
         metric_card(k2, "Water Savings (%)", fmt_or_dash(sav_pct, "{:+.1f}%"),
-                    "(Control % − Treatment %) ÷ Control % × 100", "savings_pct", C["accent"])
+                    "", "savings_pct", C["accent"])
         metric_card(k3, "Actual Volumetric Saving (m³)", fmt_or_dash(actual_m3, "{:+,.0f} m³"),
-                    "(Control − Treatment) × Treatment area × 4046 ÷ 1000", "savings_m3", C["accent"])
+                    "", "savings_m3", C["accent"])
         metric_card(k4, "Potential Volumetric Savings (m³)", fmt_or_dash(potential_m3, "{:+,.0f} m³"),
-                    "(Control − Treatment) × Control area × 4046 ÷ 1000", "savings_m3", C["treatment"])
+                    "", "savings_m3", C["treatment"])
 
     # ── Subsection 5 — side-by-side scoreboards / tables ─────────────
     st.markdown("### Side by Side")
