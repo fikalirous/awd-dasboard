@@ -1429,6 +1429,24 @@ def tab_results_overview(master_f, summary_f, master, summary):
                 style_fig(fig9b, height=300)
                 st.plotly_chart(fig9b, use_container_width=True)
 
+    # ── Build-your-own chart for the whole (sidebar-filtered) cohort ──
+    with st.expander("Build your own chart", expanded=True):
+        st.caption("Explore the whole cohort (respects the sidebar filters) — pick a chart type, axes, "
+                   "colour and filters. Use an aggregate such as Mean to summarise many farmers.")
+        datasets = {}
+        if not summary_f.empty:
+            datasets["Season summary"] = dict(
+                builder_summary(summary_f),
+                default=dict(chart="Bar", x=S["village"], y=S["total_water_mm"], color="Group", agg="Mean"))
+        if not master_f.empty:
+            datasets["Daily readings"] = dict(
+                builder_daily(master_f),
+                default=dict(chart="Line", x=DAS_COL, y=M["cum_irrig"], color="Group", agg="Mean"))
+        if datasets:
+            chart_builder("ovr_chart", datasets)
+        else:
+            st.info("No data for the current filters.")
+
 
 # ═══════════════════════════════════════════════════════════════════
 # TAB 3 — COMPARE FARMERS
